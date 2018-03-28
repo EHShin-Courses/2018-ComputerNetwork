@@ -71,9 +71,15 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 	uint32_t s_addr_1 = ((const struct sockaddr_in *)addr)->sin_addr.s_addr;
 	uint32_t s_addr_2;
 	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
-
-		if(!element.second.is_bound){
+		printf("is_bound : %d",element.second.is_bound);
+		if(element.second.is_bound == 0){
 			continue;
+		}
+		else{
+			// printf("here : %d %d\n", (int)element.first.second, (int)sockfd);
+			if(element.first.second == sockfd){
+				this->returnSystemCall(syscallUUID, ret);				
+			}
 		}
 		addr2 = element.second.addr;
 		//check overlap of addr and addr2
@@ -86,7 +92,9 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 		}
 	}
 	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
+		printf("here : %d %d %d %d\n", element.first.first, pid, element.first.second, sockfd);
 		if(element.first.first == pid && element.first.second == sockfd){
+			printf("A");
 			element.second.addr = addr;
 			element.second.addrlen = addrlen;
 			element.second.is_bound = 1;

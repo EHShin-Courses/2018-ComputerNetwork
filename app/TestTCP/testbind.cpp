@@ -42,7 +42,6 @@ protected:
 		addr.sin_port = htons(9999);
 
 		int ret = bind(fd, (struct sockaddr*)&addr, len);
-
 		EXPECT_EQ(ret, 0);
 
 		close(fd);
