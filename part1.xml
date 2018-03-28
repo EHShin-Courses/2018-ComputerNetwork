@@ -1,21 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="8" failures="1" disabled="0" errors="0" timestamp="2018-03-28T23:14:27" time="5.279" name="AllTests">
-  <testsuite name="TestEnv_Reliable" tests="8" failures="1" disabled="0" errors="0" time="5.279">
-    <testcase name="TestOpen" status="run" time="5.275" classname="TestEnv_Reliable" />
+<testsuites tests="8" failures="0" disabled="0" errors="0" timestamp="2018-03-28T23:22:06" time="5.126" name="AllTests">
+  <testsuite name="TestEnv_Reliable" tests="8" failures="0" disabled="0" errors="0" time="5.126">
+    <testcase name="TestOpen" status="run" time="5.122" classname="TestEnv_Reliable" />
     <testcase name="TestBind_Simple" status="run" time="0" classname="TestEnv_Reliable" />
     <testcase name="TestBind_DoubleBind" status="run" time="0" classname="TestEnv_Reliable" />
-    <testcase name="TestBind_GetSockName" status="run" time="0" classname="TestEnv_Reliable">
-      <failure message="testbind.cpp:133&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:133
-Value of: 0
-Expected: ret
-Which is: -1]]></failure>
-      <failure message="testbind.cpp:134&#x0A;Value of: 0&#x0A;Expected: memcmp(&amp;addr, addr2, len)&#x0A;Which is: 2" type=""><![CDATA[testbind.cpp:134
-Value of: 0
-Expected: memcmp(&addr, addr2, len)
-Which is: 2]]></failure>
-    </testcase>
-    <testcase name="TestBind_OverlapPort" status="run" time="0.001" classname="TestEnv_Reliable" />
-    <testcase name="TestBind_OverlapClosed" status="run" time="0" classname="TestEnv_Reliable" />
+    <testcase name="TestBind_GetSockName" status="run" time="0.001" classname="TestEnv_Reliable" />
+    <testcase name="TestBind_OverlapPort" status="run" time="0" classname="TestEnv_Reliable" />
+    <testcase name="TestBind_OverlapClosed" status="run" time="0.001" classname="TestEnv_Reliable" />
     <testcase name="TestBind_DifferentIP_SamePort" status="run" time="0" classname="TestEnv_Reliable" />
     <testcase name="TestBind_SameIP_DifferentPort" status="run" time="0.001" classname="TestEnv_Reliable" />
   </testsuite>

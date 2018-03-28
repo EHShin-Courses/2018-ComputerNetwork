@@ -107,6 +107,18 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 
 }
 
+void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+	int ret = -1;
+	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
+		if(element.first.first == pid && element.first.second == sockfd){
+			memcpy(addr, &element.second->addr, element.second->addrlen);
+			*addrlen = element.second->addrlen;
+			ret = 0;
+		}
+	}
+	this->returnSystemCall(syscallUUID, ret);
+
+}
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -141,9 +153,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				(socklen_t) param.param3_int);
 		break;
 	case GETSOCKNAME:
-		//this->syscall_getsockname(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_getsockname(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case GETPEERNAME:
 		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
