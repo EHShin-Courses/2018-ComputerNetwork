@@ -33,7 +33,7 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
-	this->DM = DataManager();
+
 }
 
 void TCPAssignment::finalize()
@@ -52,11 +52,8 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket.set_type__unused(type__unused);
 	socket.is_bound = 0;
 	std::pair<int, int> key = std::make_pair(pid, fd);
-	DM.get_tcp_context().insert({key, socket});
-
+	tcp_context.insert({key, socket});
 	this->returnSystemCall(syscallUUID, fd);
-
-
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
@@ -73,7 +70,6 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 	uint32_t s_addr_any = htonl(INADDR_ANY);
 	uint32_t s_addr_1 = ((const struct sockaddr_in *)addr)->sin_addr.s_addr;
 	uint32_t s_addr_2;
-	std::unordered_map<std::pair<int, int>, class Socket> tcp_context =	DM.get_tcp_context();
 	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
 
 		if(!element.second.is_bound){
@@ -89,7 +85,6 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 			}
 		}
 	}
-
 	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
 		if(element.first.first == pid && element.first.second == sockfd){
 			element.second.addr = addr;

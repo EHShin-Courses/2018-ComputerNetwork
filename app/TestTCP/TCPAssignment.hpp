@@ -36,20 +36,6 @@ public:
 	void set_type__unused(int type__unused){
 		this->type__unused = type__unused;
 	}
-
-};
-
-// DataManager
-class DataManager{
-	// <int, int> : <pid, fd>
-	std::unordered_map<std::pair<int, int>, class Socket> tcp_context;
-
-public:
-
-	std::unordered_map<std::pair<int, int>, class Socket> get_tcp_context(){
-		return this->tcp_context;
-	}
-
 };
 
 
@@ -57,10 +43,12 @@ class TCPAssignment : public HostModule, public NetworkModule, public SystemCall
 {
 
 
-
-
 private:
-	DataManager DM;
+
+	//PJ1 : socket context table
+	std::unordered_map<std::pair<int, int>, class Socket> tcp_context;
+
+
 	virtual void timerCallback(void* payload) final;
 
 public:
