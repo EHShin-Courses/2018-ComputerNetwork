@@ -58,6 +58,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	this->removeFileDescriptor(pid, fd);
+	tcp_context.erase({pid, fd});
 	// TODO : check if tried to remove existing file descriptor
 	int ret = 0; 
 	this->returnSystemCall(syscallUUID, ret);
