@@ -46,7 +46,7 @@ class TCPAssignment : public HostModule, public NetworkModule, public SystemCall
 private:
 
 	//PJ1 : socket context table
-	std::unordered_map<std::pair<int, int>, class Socket> tcp_context;
+	std::unordered_map<std::pair<int, int>, Socket*> tcp_context;
 
 
 	virtual void timerCallback(void* payload) final;
