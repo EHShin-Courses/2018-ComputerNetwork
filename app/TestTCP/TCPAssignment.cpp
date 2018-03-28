@@ -41,8 +41,17 @@ void TCPAssignment::finalize()
 
 }
 
-void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
+int TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
 	int ret = this->createFileDescriptor(pid);
+	this->returnSystemCall(syscallUUID, ret);
+
+
+}
+
+int TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
+	this->removeFileDescriptor(pid, fd);
+	// TODO : check if tried to remove existing file descriptor
+	int ret = 0; 
 	this->returnSystemCall(syscallUUID, ret);
 
 }
@@ -55,7 +64,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case CLOSE:
-		// this->syscall_close(syscallUUID, pid, param.param1_int);
+		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
 	case READ:
 		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);

@@ -52,7 +52,8 @@ public:
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
-	virtual void syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
+	virtual int syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
+	virtual int syscall_close(UUID syscallUUID, int pid, int fd) final;
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 };

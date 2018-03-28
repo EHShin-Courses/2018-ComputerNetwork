@@ -48,7 +48,7 @@ protected:
 				else
 					success++;
 			}
-			
+
 			for(int k=0; k<test_size; k++)
 			{
 				for(int i=k+1; i<test_size; i++)
