@@ -41,15 +41,21 @@ void TCPAssignment::finalize()
 
 }
 
+void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
+	int ret = this->createFileDescriptor(pid);
+	this->returnSystemCall(syscallUUID, ret);
+
+}
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
 	{
 	case SOCKET:
-		//this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
+		this->syscall_socket(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case CLOSE:
-		//this->syscall_close(syscallUUID, pid, param.param1_int);
+		// this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
 	case READ:
 		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);

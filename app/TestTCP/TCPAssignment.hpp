@@ -21,10 +21,27 @@
 
 namespace E
 {
+// Socket : open socket's information
+class Socket{
+	int domain;
+	int type__unused;
+
+};
+
+// DataManager
+class DataManager{
+	std::unordered_map<std::pair<int, int>, class Socket> tcp_context;
+};
+
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
 {
+
+
 private:
+
+	static DataManager DM;
+
 
 private:
 	virtual void timerCallback(void* payload) final;
@@ -35,6 +52,7 @@ public:
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
+	virtual void syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 };
