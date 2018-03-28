@@ -33,7 +33,7 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
-
+	this->DM = DataManager();
 }
 
 void TCPAssignment::finalize()
@@ -41,17 +41,63 @@ void TCPAssignment::finalize()
 
 }
 
-int TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
-	int ret = this->createFileDescriptor(pid);
-	this->returnSystemCall(syscallUUID, ret);
+void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
+	int fd = this->createFileDescriptor(pid);
+	if(fd == -1){ // fail
+		this->returnSystemCall(syscallUUID, fd);
+	}
+
+	class Socket socket;
+	socket.set_domain(domain);
+	socket.set_type__unused(type__unused);
+	socket.is_bound = 0;
+	std::pair<int, int> key = std::make_pair(pid, fd);
+	DM.get_tcp_context().insert({key, socket});
+
+	this->returnSystemCall(syscallUUID, fd);
 
 
 }
 
-int TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
+void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	this->removeFileDescriptor(pid, fd);
 	// TODO : check if tried to remove existing file descriptor
 	int ret = 0; 
+	this->returnSystemCall(syscallUUID, ret);
+
+}
+
+void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+	int ret = -1;
+	const struct sockaddr *addr2;
+	uint32_t s_addr_any = htonl(INADDR_ANY);
+	uint32_t s_addr_1 = ((const struct sockaddr_in *)addr)->sin_addr.s_addr;
+	uint32_t s_addr_2;
+	std::unordered_map<std::pair<int, int>, class Socket> tcp_context =	DM.get_tcp_context();
+	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
+
+		if(!element.second.is_bound){
+			continue;
+		}
+		addr2 = element.second.addr;
+		//check overlap of addr and addr2
+		s_addr_2 = ((const struct sockaddr_in *)addr2)->sin_addr.s_addr;
+
+		if(s_addr_any == s_addr_1 || s_addr_any == s_addr_2 || s_addr_1 == s_addr_2){
+			if(((const struct sockaddr_in *)addr)->sin_port == ((const struct sockaddr_in *)addr2)->sin_port){
+				this->returnSystemCall(syscallUUID, ret);
+			}
+		}
+	}
+
+	for(std::pair<std::pair<int, int>, class Socket> element : tcp_context){
+		if(element.first.first == pid && element.first.second == sockfd){
+			element.second.addr = addr;
+			element.second.addrlen = addrlen;
+			element.second.is_bound = 1;
+			ret = 0;
+		}
+	}
 	this->returnSystemCall(syscallUUID, ret);
 
 }
@@ -85,9 +131,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//		static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
-		//this->syscall_bind(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		(socklen_t) param.param3_int);
+		this->syscall_bind(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				(socklen_t) param.param3_int);
 		break;
 	case GETSOCKNAME:
 		//this->syscall_getsockname(syscallUUID, pid, param.param1_int,

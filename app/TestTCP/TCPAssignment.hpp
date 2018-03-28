@@ -23,14 +23,33 @@ namespace E
 {
 // Socket : open socket's information
 class Socket{
+public:
 	int domain;
 	int type__unused;
+	const struct sockaddr *addr;
+	socklen_t addrlen;	
+	int is_bound;
+public:
+	void set_domain(int domain){
+		this->domain = domain; 
+	}
+	void set_type__unused(int type__unused){
+		this->type__unused = type__unused;
+	}
 
 };
 
 // DataManager
 class DataManager{
+	// <int, int> : <pid, fd>
 	std::unordered_map<std::pair<int, int>, class Socket> tcp_context;
+
+public:
+
+	std::unordered_map<std::pair<int, int>, class Socket> get_tcp_context(){
+		return this->tcp_context;
+	}
+
 };
 
 
@@ -38,22 +57,23 @@ class TCPAssignment : public HostModule, public NetworkModule, public SystemCall
 {
 
 
-private:
-
-	static DataManager DM;
 
 
 private:
+	DataManager DM;
 	virtual void timerCallback(void* payload) final;
 
 public:
+
 	TCPAssignment(Host* host);
 	virtual void initialize();
 	virtual void finalize();
 	virtual ~TCPAssignment();
 protected:
-	virtual int syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
-	virtual int syscall_close(UUID syscallUUID, int pid, int fd) final;
+	virtual void syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
+	virtual void syscall_close(UUID syscallUUID, int pid, int fd) final;
+	virtual void syscall_bind(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
+
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 };
