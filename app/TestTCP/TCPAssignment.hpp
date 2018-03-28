@@ -26,7 +26,7 @@ class Socket{
 public:
 	int domain;
 	int type__unused;
-	const struct sockaddr *addr;
+	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
 public:
