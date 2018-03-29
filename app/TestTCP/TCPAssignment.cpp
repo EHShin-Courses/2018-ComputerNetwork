@@ -83,11 +83,12 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 				this->returnSystemCall(syscallUUID, ret);				
 			}
 		}
-		addr2 = element.second->addr;
+		addr2 = &(element.second->addr);
 		//check overlap of addr and addr2
 		s_addr_2 = ((const struct sockaddr_in *)addr2)->sin_addr.s_addr;
 
 		if(s_addr_any == s_addr_1 || s_addr_any == s_addr_2 || s_addr_1 == s_addr_2){
+			printf("%d %d\n",ntohs(((const struct sockaddr_in *)addr)->sin_port), ntohs(((const struct sockaddr_in *)addr2)->sin_port));
 			if(((const struct sockaddr_in *)addr)->sin_port == ((const struct sockaddr_in *)addr2)->sin_port){
 				this->returnSystemCall(syscallUUID, ret);
 			}
@@ -96,7 +97,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 
 	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
 		if(element.first.first == pid && element.first.second == sockfd){
-			element.second->addr = addr;
+			memcpy(&(element.second->addr), addr, addrlen);
 			element.second->addrlen = addrlen;
 			element.second->is_bound = 1;
 			ret = 0;
@@ -106,6 +107,18 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 
 }
 
+void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+	int ret = -1;
+	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
+		if(element.first.first == pid && element.first.second == sockfd){
+			memcpy(addr, &element.second->addr, element.second->addrlen);
+			*addrlen = element.second->addrlen;
+			ret = 0;
+		}
+	}
+	this->returnSystemCall(syscallUUID, ret);
+
+}
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -140,9 +153,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				(socklen_t) param.param3_int);
 		break;
 	case GETSOCKNAME:
-		//this->syscall_getsockname(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_getsockname(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case GETPEERNAME:
 		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,

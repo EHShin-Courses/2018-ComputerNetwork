@@ -26,7 +26,7 @@ class Socket{
 public:
 	int domain;
 	int type__unused;
-	const struct sockaddr *addr;
+	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
 public:
@@ -61,6 +61,7 @@ protected:
 	virtual void syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused) final;
 	virtual void syscall_close(UUID syscallUUID, int pid, int fd) final;
 	virtual void syscall_bind(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
+	virtual void syscall_getsockname(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
