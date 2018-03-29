@@ -88,7 +88,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 		s_addr_2 = ((const struct sockaddr_in *)addr2)->sin_addr.s_addr;
 
 		if(s_addr_any == s_addr_1 || s_addr_any == s_addr_2 || s_addr_1 == s_addr_2){
-			printf("%d %d\n",ntohs(((const struct sockaddr_in *)addr)->sin_port), ntohs(((const struct sockaddr_in *)addr2)->sin_port));
+			// printf("%d %d\n",ntohs(((const struct sockaddr_in *)addr)->sin_port), ntohs(((const struct sockaddr_in *)addr2)->sin_port));
 			if(((const struct sockaddr_in *)addr)->sin_port == ((const struct sockaddr_in *)addr2)->sin_port){
 				this->returnSystemCall(syscallUUID, ret);
 			}
