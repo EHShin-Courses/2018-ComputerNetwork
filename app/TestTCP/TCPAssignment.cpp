@@ -51,6 +51,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket->set_type__unused(type__unused);
 	socket->is_bound = 0;
 	socket->is_listen = 0;
+	socket->syscallUUID = -1;
 	std::pair<int, int> key = std::make_pair(pid, fd);
 	tcp_context.insert({key, socket});
 	this->returnSystemCall(syscallUUID, fd);
@@ -141,6 +142,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		int dest_ip_int = ntohl(((const struct sockaddr_in *)addr)->sin_addr.s_addr);
 		memcpy(dest_ip, &dest_ip_int, 4);
 		source_port = this->getHost()->getRoutingTable(dest_ip);
+		((struct sockaddr_in *)&(client_socket->addr))->sin_port = source_port;
 	}
 
 	uint8_t source_ip[4];
@@ -175,7 +177,13 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 
 		this->sendPacket("IPv4", send_packet);
-		this->returnSystemCall(syscallUUID, 0);
+		struct sockaddr_in* temp = &(client_socket->addr);
+		temp->s_addr.sin_addr = source_ip_int;
+		temp->sin_port = source_port;
+		client_socket->syscallUUID = syscallUUID;
+		
+		// wait for timeout or syn ack returns connect.
+
 	}
 }
 
@@ -235,18 +243,52 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-	/*
+	
 	uint8_t flags;
 	packet->readData(14+20+13, &flags,1);
-	printf("%d",flags%4);
-	fflush(0);
-	*/
+	int syn_bit = !!(flags & 0x02);
+	int ack_bit = !!(flags & 0x10);
+
+	short dest_port;
+	int dest_ip;
+	packet->readData(14+20+2, &dest_port, 2);
+	packet->readData(14+16, &dest_ip, 4);
+	Socket *receive_socket = this->find_socket(dest_port, dest_ip);
+
+	if(syn_bit == 1){
+		if(ack_bit == 0){
+
+		}
+		else if(ack_bit == 1){
+			// client recieved SYNACK
+			//return from connect()
+			this->returnSystemCall(receive_socket->syscallUUID, 1);
+			TODO:send ack packet
+		}
+	}
+	else if(syn_bit == 0){
+
+	}
+
 }
 
 void TCPAssignment::timerCallback(void* payload)
 {
 
 }
+
+Socket *TCPAssignment::find_socket(short port, int ip){
+	//assume args are network byte ordering
+	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
+		struct sockaddr_in * temp_addr_in = (struct sockaddr_in *)&(element.second->addr);
+		int temp_ip = temp_addr_in->s_addr.sin_addr;
+		short temp_port = temp_addr_in->sin_port;
+		if((temp_ip == 0 || temp_ip == ip) && (temp_port == port)){
+			return element.second;
+		}		
+	}
+	return NULL;
+} 
 
 
 }

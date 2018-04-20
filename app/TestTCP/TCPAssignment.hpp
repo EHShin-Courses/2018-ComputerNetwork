@@ -32,6 +32,7 @@ public:
 	int ack; // expected sequence number for this socket to recieve
 	int seq; // next sequence number to send
 	int is_listen;
+	int syscallUUID;
 public:
 	void set_domain(int domain){
 		this->domain = domain; 
@@ -70,6 +71,9 @@ protected:
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
+
+
+	virtual Socket *find_socket(short port, int ip) final;
 };
 
 class TCPAssignmentProvider
