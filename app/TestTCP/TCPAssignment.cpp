@@ -119,6 +119,40 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int sockfd, s
 	this->returnSystemCall(syscallUUID, ret);
 
 }
+
+void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen){
+	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+	// write dest ip address
+	send_packet->writeData(14 + 16, addr->sin_addr.s_addr, 4);
+
+	// write source ip address
+	Socket *client_socket =  tcp_context.at({pid, sockfd});
+	short source_port;
+	if(client_socket->is_bound == 1){
+		source_port = ntohs(((const struct sockaddr_in *)client_socket)->addr.sin_port);
+	}
+	else{
+		int dest_ip = ntohl(addr->sin_addr.s_addr);
+		source_port = getRoutingTable(&dest_ip);
+	}
+	uint8_t source_ip;
+	if(getIPAddr(&source_ip, source_port) == false){
+		this->freePacket(send_packet);
+		returnSystemCall(syscallUUID, -1);
+	}
+
+	send_packet->writeData(14 + 12, htonl(source_ip), 4);
+
+	// write source, dest port
+
+	send_packet->writeData(14 + 20, htons(source_port), 2);
+	send_packet->writeData(14 + 20 + 2, htons(((const struct sockaddr_in *)addr)->sin_port), 2);
+
+	this->sendPacket("IPv4", send_packet);
+
+
+}
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -136,8 +170,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+		this->syscall_connect(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
 		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
@@ -169,7 +203,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-
+	printf("Hello");
+	fflush(0);
 }
 
 void TCPAssignment::timerCallback(void* payload)
