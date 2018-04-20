@@ -50,6 +50,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket->set_domain(domain);
 	socket->set_type__unused(type__unused);
 	socket->is_bound = 0;
+	socket->is_listen = 0;
 	std::pair<int, int> key = std::make_pair(pid, fd);
 	tcp_context.insert({key, socket});
 	this->returnSystemCall(syscallUUID, fd);
@@ -176,6 +177,12 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		this->sendPacket("IPv4", send_packet);
 		this->returnSystemCall(syscallUUID, 0);
 	}
+}
+
+void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog){
+	Socket *server_socket =  tcp_context.at({pid, sockfd});
+	server_socket-> is_listen = 1;
+	this->returnSystemCall(syscallUUID, 0);	
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)

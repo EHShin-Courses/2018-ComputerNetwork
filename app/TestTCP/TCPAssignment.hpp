@@ -31,6 +31,7 @@ public:
 	int is_bound;
 	int ack; // expected sequence number for this socket to recieve
 	int seq; // next sequence number to send
+	int is_listen;
 public:
 	void set_domain(int domain){
 		this->domain = domain; 
@@ -65,6 +66,7 @@ protected:
 	virtual void syscall_bind(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
 	virtual void syscall_getsockname(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
 	virtual void syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
+	virtual void syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
