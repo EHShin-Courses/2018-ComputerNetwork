@@ -29,6 +29,8 @@ public:
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
+	int ack; // expected sequence number for this socket to recieve
+	int seq; // next sequence number to send
 public:
 	void set_domain(int domain){
 		this->domain = domain; 

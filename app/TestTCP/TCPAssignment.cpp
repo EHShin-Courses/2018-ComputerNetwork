@@ -160,6 +160,19 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		send_packet->writeData(14+20, &source_port, 2);
 		send_packet->writeData(14+20+2, &(((const struct sockaddr_in *)addr)->sin_port), 2);
 
+		// 'ACK packet' attributes
+
+		client_socket->seq = 0;
+		send_packet->writeData(14+20+4, &(client_socket->seq), 4);
+		client_socket->seq++;
+
+		uint8_t flags;
+		send_packet->readData(14+20+13, &flags,1);
+		flags = flags | 0x02;
+		send_packet->writeData(14+20+13, &flags, 1);// set SYN bit
+
+
+
 		this->sendPacket("IPv4", send_packet);
 		this->returnSystemCall(syscallUUID, 0);
 	}
@@ -186,7 +199,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
-		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
+		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
 		//this->syscall_accept(syscallUUID, pid, param.param1_int,
@@ -215,8 +228,12 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-	printf("Hello");
+	/*
+	uint8_t flags;
+	packet->readData(14+20+13, &flags,1);
+	printf("%d",flags%4);
 	fflush(0);
+	*/
 }
 
 void TCPAssignment::timerCallback(void* payload)
