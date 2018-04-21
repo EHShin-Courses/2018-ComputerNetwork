@@ -55,7 +55,8 @@ struct tcp_header{
 	short dest_port;
 	int seq_num;
 	int ack_num;
-	char hlen_and_reserved;
+	unsigned char hlen : 4;
+	unsigned char reserved_1 : 4;
 	unsigned short fin_flag : 1;
 	unsigned short syn_flag : 1;
 	unsigned short rst_flag : 1;
@@ -85,6 +86,7 @@ private:
 
 	//PJ2 : new port number
 	int current_port_number;
+	int INITIAL_RWND;
 
 	virtual void timerCallback(void* payload) final;
 

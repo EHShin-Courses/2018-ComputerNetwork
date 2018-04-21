@@ -34,6 +34,7 @@ TCPAssignment::~TCPAssignment()
 void TCPAssignment::initialize()
 {
 	current_port_number = 32688;
+	INITIAL_RWND = 51200;
 }
 
 void TCPAssignment::finalize()
@@ -179,7 +180,21 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		// set SYN flag
 		tcp_header.syn_flag = 1;
 
+
+		tcp_header.window_size = INITIAL_RWND;
+		tcp_header.hlen = 20 / 4;
+
+		uint16_t sum = NetworkUtil::one_sum((uint8_t *)&tcp_header, tcp_header.hlen*4);
+		sum = ~sum;
+		tcp_header.checksum = sum;
+
+
 		Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+
+
+
+
+
 		this->write_packet(send_packet, &ip_header, &tcp_header);
 		
 
