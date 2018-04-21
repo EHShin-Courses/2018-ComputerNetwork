@@ -33,7 +33,7 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
-
+	current_port_number = 32688;
 }
 
 void TCPAssignment::finalize()
@@ -135,30 +135,33 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	// write source ip address
 	Socket *client_socket =  tcp_context.at({pid, sockfd});
 
-	int source_port; //host ordering
+	short source_port;
+	int routing_table_index; 
 	if(client_socket->is_bound == 1){
 		const struct sockaddr_in buf = *(const struct sockaddr_in *)&(client_socket->addr);
-		source_port = (int)ntohs(buf.sin_port);
+		source_port = ntohs(buf.sin_port);
 
 	}
 	else{
 		uint8_t dest_ip[4];
 		int dest_ip_int = ntohl(((const struct sockaddr_in *)addr)->sin_addr.s_addr);
 		memcpy(dest_ip, &dest_ip_int, 4);
-		source_port = this->getHost()->getRoutingTable(dest_ip);
-		((struct sockaddr_in *)&(client_socket->addr))->sin_port = source_port;
+		routing_table_index = this->getHost()->getRoutingTable(dest_ip);
+		((struct sockaddr_in *)&(client_socket->addr))->sin_port = current_port_number;
+		source_port = current_port_number;
+		current_port_number++;
+
 	}
 
 	uint8_t source_ip[4];
 	int source_ip_int;
-	if(this->getHost()->getIPAddr(source_ip, source_port) == false){
+	if(this->getHost()->getIPAddr(source_ip, routing_table_index) == false){
 		printf("connect(): getIPAddr fail\n");
 		this->returnSystemCall(syscallUUID, -1);
 	}
 	else{
 		//save src ip
 		memcpy(&source_ip_int, source_ip, 4);
-		source_ip_int = htonl(source_ip_int);
 		ip_header.source_ip = source_ip_int;
 
 		// save src/dest port
@@ -248,6 +251,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
+
 
 	struct ip_header receive_ip_header;
 	struct tcp_header receive_tcp_header;

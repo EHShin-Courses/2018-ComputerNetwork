@@ -83,6 +83,8 @@ private:
 	//PJ1 : socket context table
 	std::unordered_map<std::pair<int, int>, Socket*> tcp_context;
 
+	//PJ2 : new port number
+	int current_port_number;
 
 	virtual void timerCallback(void* payload) final;
 
