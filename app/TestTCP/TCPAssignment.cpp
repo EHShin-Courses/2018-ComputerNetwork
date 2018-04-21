@@ -222,9 +222,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
-		//this->syscall_accept(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		// this->syscall_accept(syscallUUID, pid, param.param1_int,
+		// 		static_cast<struct sockaddr*>(param.param2_ptr),
+		// 		static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
@@ -249,25 +249,44 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
 
-	struct ip_header ip_header;
-	struct tcp_header tcp_header;
-	this->read_packet(packet, &ip_header, &tcp_header);
-	Socket *receive_socket = this->find_socket(tcp_header.dest_port, ip_header.dest_ip);
-	if(tcp_header.syn_flag == 1){
-		if(tcp_header.ack_flag == 0){
+	struct ip_header receive_ip_header;
+	struct tcp_header receive_tcp_header;
+	struct ip_header new_ip_header;
+	struct tcp_header new_tcp_header;
+
+	this->read_packet(packet, &receive_ip_header, &receive_tcp_header);
+	Socket *receive_socket = this->find_socket(receive_tcp_header.dest_port, receive_ip_header.dest_ip);
+	if(receive_tcp_header.syn_flag == 1){
+		if(receive_tcp_header.ack_flag == 0){
 
 		}
-		else if(tcp_header.ack_flag == 1){
+		else if(receive_tcp_header.ack_flag == 1){
 			// client recieved SYNACK
 			//return from connect()
-			this->returnSystemCall(receive_socket->syscallUUID, 1);
+			if(receive_socket->seq_num + 1 == receive_tcp_header.ack_num){
+				new_ip_header.source_ip = receive_ip_header.dest_ip;
+				new_ip_header.dest_ip = receive_ip_header.source_ip;
+				new_tcp_header.ack_num = receive_tcp_header.seq_num + 1;
+				receive_socket->ack_num = receive_tcp_header.seq_num + 1;
+				new_tcp_header.seq_num = receive_tcp_header.ack_num;
+				new_tcp_header.ack_flag = 1;
+				receive_socket->seq_num++;
 
+				Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+				this->write_packet(send_packet, &new_ip_header, &new_tcp_header);
+				this->sendPacket("IPv4", send_packet);
+				this->returnSystemCall(receive_socket->syscallUUID, 1);
+			}
+			else{
+				printf("wrong ack_num for syn ack packet\n");
+			}
 		}
 	}
-	else if(tcp_header.syn_flag == 0){
+	else if(receive_tcp_header.syn_flag == 0){
 
 	}
 
+	this->freePacket(packet);
 }
 
 void TCPAssignment::timerCallback(void* payload)
