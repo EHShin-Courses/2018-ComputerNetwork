@@ -68,7 +68,6 @@ struct tcp_header{
 	unsigned short reserved_3 : 1;
 	unsigned short reserved_2 : 1;
 
-
 	short window_size;
 	short checksum;
 	short urgent_pointer;
@@ -112,7 +111,10 @@ protected:
 	virtual Socket *find_socket(short port, int ip) final;
 	virtual void write_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp) final;
 	virtual void read_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp) final;
-
+	void ntoh_ip_header(struct ip_header *n, struct ip_header *h);
+	void hton_ip_header(struct ip_header *h, struct ip_header *n);
+	void ntoh_tcp_header(struct tcp_header *n, struct tcp_header *h);
+	void hton_tcp_header(struct tcp_header *n, struct tcp_header *h);
 };
 
 class TCPAssignmentProvider

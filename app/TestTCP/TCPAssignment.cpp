@@ -130,8 +130,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 	// save dest ip address	
 	ip_header.dest_ip = (((const struct sockaddr_in *)addr)->sin_addr.s_addr);
-	// ip_header.dest_ip = htonl(12123123);
-	// send_packet->writeData(14 + 16, &(((const struct sockaddr_in *)addr)->sin_addr.s_addr), 4);
 
 	// write source ip address
 	Socket *client_socket =  tcp_context.at({pid, sockfd});
@@ -310,6 +308,8 @@ void TCPAssignment::timerCallback(void* payload)
 
 }
 
+/* Helper Functions */
+
 Socket *TCPAssignment::find_socket(short port, int ip){
 	//assume args are network byte ordering
 	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
@@ -341,7 +341,54 @@ void TCPAssignment::read_packet(Packet *packet, struct ip_header *ip, struct tcp
 	}
 }
 
+void TCPAssignment::ntoh_ip_header(struct ip_header *n, struct ip_header *h){
+	//skip buffer
+	h->source_ip |= ntohl(n->source_ip);
+	h->dest_ip |= ntohl(n->dest_ip);
+}
 
+void TCPAssignment::hton_ip_header(struct ip_header *h, struct ip_header *n){
+	//skip buffer
+	n->source_ip |= htonl(h->source_ip);
+	n->dest_ip |= htonl(h->dest_ip);
+}
 
+void TCPAssignment::ntoh_tcp_header(struct tcp_header *n, struct tcp_header *h){
+	h->source_port |= ntohs(n->source_port);
+	h->dest_port |= ntohs(n->dest_port);
+	h->seq_num |= ntohl(n->seq_num);
+	h->ack_num |= ntohl(n->ack_num);
+	//skip reserved_1
+	h->hlen |= n->hlen; //4bit
+	h->fin_flag |= n->fin_flag;
+	h->syn_flag |= n->syn_flag;
+	h->rst_flag |= n->rst_flag;
+	h->psh_flag |= n->psh_flag;
+	h->ack_flag |= n->ack_flag;
+	h->urg_flag |= n->urg_flag;
+	//skip reserved 2,3
+	h->window_size |= ntohs(n->window_size);
+	h->checksum |= ntohs(n->checksum);
+	// skip urgent ptr
+}
+
+void TCPAssignment::hton_tcp_header(struct tcp_header *h, struct tcp_header *n){
+	n->source_port |= ntohs(h->source_port);
+	n->dest_port |= ntohs(h->dest_port);
+	n->seq_num |= ntohl(h->seq_num);
+	n->ack_num |= ntohl(h->ack_num);
+	//skip reserved_1
+	n->hlen |= h->hlen; //4bit
+	n->fin_flag |= h->fin_flag;
+	n->syn_flag |= h->syn_flag;
+	n->rst_flag |= h->rst_flag;
+	n->psh_flag |= h->psh_flag;
+	n->ack_flag |= h->ack_flag;
+	n->urg_flag |= h->urg_flag;
+	//skip reserved 2,3
+	n->window_size |= ntohs(h->window_size);
+	n->checksum |= ntohs(h->checksum);
+	// skip urgent ptr
+}
 
 }
