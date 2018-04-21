@@ -55,14 +55,19 @@ struct tcp_header{
 	short dest_port;
 	int seq_num;
 	int ack_num;
-	unsigned short hlen : 4;
-	unsigned short reserved : 6;
-	unsigned short urg_flag : 1;
-	unsigned short ack_flag : 1;
-	unsigned short psh_flag : 1;
-	unsigned short rst_flag : 1;
-	unsigned short syn_flag : 1;
+	char hlen_and_reserved;
 	unsigned short fin_flag : 1;
+	unsigned short syn_flag : 1;
+	unsigned short rst_flag : 1;
+	unsigned short psh_flag : 1;
+	unsigned short ack_flag : 1;
+	unsigned short urg_flag : 1;
+	unsigned short reserved_3 : 1;
+	unsigned short reserved_2 : 1;
+
+
+
+
 	short window_size;
 	short checksum;
 	short urgent_pointer;
