@@ -174,26 +174,23 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		// 'ACK packet' attributes
 
 		client_socket->seq_num = 0xfffff402;
-		tcp_header.seq_num = client_socket->seq_num;
+		tcp_header.seq_num = htonl(client_socket->seq_num);
 		client_socket->seq_num++;
 
 		// set SYN flag
 		tcp_header.syn_flag = 1;
 
 
-		tcp_header.window_size = INITIAL_RWND;
+		tcp_header.window_size = htons(INITIAL_RWND);
 		tcp_header.hlen = 20 / 4;
 
-		uint16_t sum = NetworkUtil::one_sum((uint8_t *)&tcp_header, tcp_header.hlen*4);
-		sum = ~sum;
-		tcp_header.checksum = sum;
 
+		// +0 : because segment length
+		uint16_t sum = NetworkUtil::tcp_sum(ip_header.source_ip, ip_header.dest_ip, (uint8_t *)&tcp_header, tcp_header.hlen*4+0);
+		sum = ~sum;
+		tcp_header.checksum = htons(sum);
 
 		Packet *send_packet = this->allocatePacket(14 + 20 + 20);
-
-
-
-
 
 		this->write_packet(send_packet, &ip_header, &tcp_header);
 		

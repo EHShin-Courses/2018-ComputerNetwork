@@ -69,8 +69,6 @@ struct tcp_header{
 	unsigned short reserved_2 : 1;
 
 
-
-
 	short window_size;
 	short checksum;
 	short urgent_pointer;
