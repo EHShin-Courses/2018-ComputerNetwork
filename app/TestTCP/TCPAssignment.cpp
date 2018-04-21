@@ -173,7 +173,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 		// 'ACK packet' attributes
 
-		client_socket->seq_num = 0;
+		client_socket->seq_num = 0xfffff402;
 		tcp_header.seq_num = client_socket->seq_num;
 		client_socket->seq_num++;
 

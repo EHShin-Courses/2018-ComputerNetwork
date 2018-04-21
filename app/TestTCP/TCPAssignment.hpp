@@ -55,8 +55,10 @@ struct tcp_header{
 	short dest_port;
 	int seq_num;
 	int ack_num;
-	unsigned char hlen : 4;
+
 	unsigned char reserved_1 : 4;
+	unsigned char hlen : 4;
+	
 	unsigned short fin_flag : 1;
 	unsigned short syn_flag : 1;
 	unsigned short rst_flag : 1;
