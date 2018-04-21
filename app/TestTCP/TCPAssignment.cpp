@@ -124,10 +124,12 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int sockfd, s
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen){
 
-	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+	struct ip_header ip_header = {0};
+	struct tcp_header tcp_header = {0};
 
-	// write dest ip address
-	send_packet->writeData(14 + 16, &(((const struct sockaddr_in *)addr)->sin_addr.s_addr), 4);
+	// save dest ip address	
+	ip_header.dest_ip = (((const struct sockaddr_in *)addr)->sin_addr.s_addr);
+	// send_packet->writeData(14 + 16, &(((const struct sockaddr_in *)addr)->sin_addr.s_addr), 4);
 
 	// write source ip address
 	Socket *client_socket =  tcp_context.at({pid, sockfd});
@@ -135,7 +137,8 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	int source_port; //host ordering
 	if(client_socket->is_bound == 1){
 		const struct sockaddr_in buf = *(const struct sockaddr_in *)&(client_socket->addr);
-		source_port = (int)ntohs(buf.sin_port);		
+		source_port = (int)ntohs(buf.sin_port);
+
 	}
 	else{
 		uint8_t dest_ip[4];
@@ -149,36 +152,36 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	int source_ip_int;
 	if(this->getHost()->getIPAddr(source_ip, source_port) == false){
 		printf("connect(): getIPAddr fail\n");
-		freePacket(send_packet);
 		this->returnSystemCall(syscallUUID, -1);
 	}
 	else{
-		//write src ip
+		//save src ip
 		memcpy(&source_ip_int, source_ip, 4);
 		source_ip_int = htonl(source_ip_int);
-		send_packet->writeData(14+12, &source_ip_int, 4);
+		ip_header.source_ip = source_ip_int;
 
-		//write src/dst port
+		// save src/dest port
 		source_port = htons(source_port);
-		send_packet->writeData(14+20, &source_port, 2);
-		send_packet->writeData(14+20+2, &(((const struct sockaddr_in *)addr)->sin_port), 2);
+		tcp_header.source_port = source_port;
+		tcp_header.dest_port = (((const struct sockaddr_in *)addr)->sin_port);
+
 
 		// 'ACK packet' attributes
 
-		client_socket->seq = 0;
-		send_packet->writeData(14+20+4, &(client_socket->seq), 4);
-		client_socket->seq++;
+		client_socket->seq_num = 0;
+		tcp_header.seq_num = client_socket->seq_num;
+		client_socket->seq_num++;
 
-		uint8_t flags;
-		send_packet->readData(14+20+13, &flags,1);
-		flags = flags | 0x02;
-		send_packet->writeData(14+20+13, &flags, 1);// set SYN bit
+		// set SYN flag
+		tcp_header.syn_flag = 1;
 
-
-
+		Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+		this->write_packet(send_packet, &ip_header, &tcp_header);
+		
+		printf("%d %d\n",sizeof(struct ip_header), sizeof(struct tcp_header));
 		this->sendPacket("IPv4", send_packet);
-		struct sockaddr_in* temp = &(client_socket->addr);
-		temp->s_addr.sin_addr = source_ip_int;
+		struct sockaddr_in *temp = (struct sockaddr_in *)&(client_socket->addr);
+		temp->sin_addr.s_addr = source_ip_int;
 		temp->sin_port = source_port;
 		client_socket->syscallUUID = syscallUUID;
 		
@@ -190,6 +193,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog){
 	Socket *server_socket =  tcp_context.at({pid, sockfd});
 	server_socket-> is_listen = 1;
+	server_socket->backlog = backlog;
 	this->returnSystemCall(syscallUUID, 0);	
 }
 
@@ -243,7 +247,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-	
+
 	uint8_t flags;
 	packet->readData(14+20+13, &flags,1);
 	int syn_bit = !!(flags & 0x02);
@@ -263,7 +267,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			// client recieved SYNACK
 			//return from connect()
 			this->returnSystemCall(receive_socket->syscallUUID, 1);
-			TODO:send ack packet
 		}
 	}
 	else if(syn_bit == 0){
@@ -281,7 +284,7 @@ Socket *TCPAssignment::find_socket(short port, int ip){
 	//assume args are network byte ordering
 	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
 		struct sockaddr_in * temp_addr_in = (struct sockaddr_in *)&(element.second->addr);
-		int temp_ip = temp_addr_in->s_addr.sin_addr;
+		int temp_ip = temp_addr_in->sin_addr.s_addr;
 		short temp_port = temp_addr_in->sin_port;
 		if((temp_ip == 0 || temp_ip == ip) && (temp_port == port)){
 			return element.second;
@@ -289,6 +292,26 @@ Socket *TCPAssignment::find_socket(short port, int ip){
 	}
 	return NULL;
 } 
+
+void TCPAssignment::write_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
+	if(ip != NULL){
+		packet->writeData(14, ip, 20);
+	}
+	if(tcp != NULL){
+		packet->writeData(14 + 20, tcp, 20);
+	}
+}
+
+void TCPAssignment::read_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
+	if(ip != NULL){
+		packet->readData(14, ip, 20);
+	}
+	if(tcp != NULL){
+		packet->readData(14 + 20, tcp, 20);
+	}
+}
+
+
 
 
 }

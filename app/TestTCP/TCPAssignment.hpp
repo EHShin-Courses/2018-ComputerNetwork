@@ -19,6 +19,7 @@
 
 #include <E/E_TimerModule.hpp>
 
+
 namespace E
 {
 // Socket : open socket's information
@@ -29,10 +30,11 @@ public:
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
-	int ack; // expected sequence number for this socket to recieve
-	int seq; // next sequence number to send
+	int ack_num; // expected sequence number for this socket to recieve
+	int seq_num; // next sequence number to send
 	int is_listen;
 	int syscallUUID;
+	int backlog;
 public:
 	void set_domain(int domain){
 		this->domain = domain; 
@@ -40,6 +42,30 @@ public:
 	void set_type__unused(int type__unused){
 		this->type__unused = type__unused;
 	}
+};
+
+struct ip_header{
+	char buffer[12];
+	int source_ip;
+	int dest_ip;
+};
+
+struct tcp_header{
+	short source_port;
+	short dest_port;
+	int seq_num;
+	int ack_num;
+	unsigned short hlen : 4;
+	unsigned short reserved : 6;
+	unsigned short urg_flag : 1;
+	unsigned short ack_flag : 1;
+	unsigned short psh_flag : 1;
+	unsigned short rst_flag : 1;
+	unsigned short syn_flag : 1;
+	unsigned short fin_flag : 1;
+	short window_size;
+	short checksum;
+	short urgent_pointer;
 };
 
 
@@ -73,7 +99,11 @@ protected:
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 
 
+
 	virtual Socket *find_socket(short port, int ip) final;
+	virtual void write_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp) final;
+	virtual void read_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp) final;
+
 };
 
 class TCPAssignmentProvider
