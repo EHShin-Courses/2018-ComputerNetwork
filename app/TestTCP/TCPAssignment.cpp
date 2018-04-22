@@ -53,6 +53,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket->is_bound = 0;
 	socket->is_listen = 0;
 	socket->syscallUUID = -1;
+	socket->pid = pid;
 	std::pair<int, int> key = std::make_pair(pid, fd);
 	tcp_context.insert({key, socket});
 	this->returnSystemCall(syscallUUID, fd);
@@ -179,7 +180,27 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 	this->returnSystemCall(syscallUUID, 0);	
 }
 
-void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, int *client_len){
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len){
+
+	Socket *server_socket = tcp_context.at({pid, sockfd});
+
+	// accept is called before connection is established
+	if(server_socket->establish_list.empty()){
+		server_socket->accept_list.push_back({syscallUUID, client_addr});
+		*client_len = sizeof(struct sockaddr);
+	}
+
+
+	// accept is called after connection is established
+	else{
+
+		std::pair<int, int> client_pid_sockfd = server_socket->establish_list.back();
+		server_socket->establish_list.pop_back();
+		Socket *client_socket = tcp_context.at(client_pid_sockfd);
+		memcpy(client_addr, &(client_socket->addr), sizeof(struct sockaddr));
+		*client_len = sizeof(struct sockaddr);
+		returnSystemCall(syscallUUID, client_pid_sockfd.second);
+	}
 
 
 }
@@ -255,7 +276,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	Socket *rcv_socket = this->find_socket(rcv_tcph_h.dest_port, rcv_iph_h.dest_ip);
 	if(rcv_socket == NULL){
 		printf("packetArrived(): No recieve socket\n");
+		freePacket(packet);
+		return;
 	}
+
+	new_tcph_h.source_port = rcv_tcph_h.dest_port;
+	new_tcph_h.dest_port = rcv_tcph_h.source_port;
+	new_iph_h.source_ip = rcv_iph_h.dest_ip;
+	new_iph_h.dest_ip = rcv_iph_h.source_ip;
 
 	// When to check recieve_socket != NULL ?
 	// need to recieve data after establishing connection (even for unaccepted connections)
@@ -271,11 +299,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				this->set_sockaddr_port(&rcv_socket->peer_addr, rcv_tcph_h.source_port);
 
 				//send ACK packet
-				new_tcph_h.source_port = rcv_tcph_h.dest_port;
-				new_tcph_h.dest_port = rcv_tcph_h.source_port;
-				new_iph_h.source_ip = rcv_iph_h.dest_ip;
-				new_iph_h.dest_ip = rcv_iph_h.source_ip;
-
 				new_tcph_h.ack_flag = 1;
 				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
 				new_tcph_h.ack_num = rcv_socket->ack_num;
@@ -301,11 +324,76 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		else{
 			// SYN=1 ACK=0
 			// Server recieved SYN
+
+			if(rcv_socket->is_listen == 1){
+				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
+					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, 0, rcv_tcph_h.seq_num + 1};
+					rcv_socket->syn_clients.push_back(new_syn_client);
+
+					//send SYNACK packet
+					new_tcph_h.syn_flag = 1;
+					new_tcph_h.ack_flag = 1;
+					new_tcph_h.ack_num = new_syn_client.ack_num;
+					new_tcph_h.seq_num = new_syn_client.seq_num;
+
+					this->hton_ip_header(&new_iph_h, &new_iph_n);
+					this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
+
+					send_packet = this->allocatePacket(14+20+20);
+					this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
+					this->set_common_tcp_fields(send_packet);
+					this->sendPacket("IPv4", send_packet);
+				}
+				else{
+					// ignore
+				}
+
+			}
+			else{
+				// ignore
+			}
 		}
 	}
 	else{
 		// SYN == 0
+		if(rcv_socket->is_listen == 1){
+			std::vector<struct syn_client>::iterator it;
+			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
+				if(rcv_iph_h.source_ip == (*it).ip && rcv_tcph_h.source_port == (*it).port){
+					Socket *socket = new Socket();
+					socket->is_bound = 0;
+					socket->is_listen = 0;
+					socket->syscallUUID = -1;
+					socket->pid = rcv_socket->pid;
+					set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
+					set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
+					set_sockaddr_family(&(socket->addr));
+					set_sockaddr_ip(&(socket->peer_addr), rcv_iph_h.source_ip);
+					set_sockaddr_port(&(socket->peer_addr), rcv_tcph_h.source_port);
+					set_sockaddr_family(&(socket->peer_addr));
 
+					int fd = this->createFileDescriptor(socket->pid);
+					tcp_context.insert({{socket->pid, fd}, socket});
+
+					if(rcv_socket->accept_list.empty()){
+						rcv_socket->establish_list.push_back({socket->pid, fd});
+					}
+					else{
+						std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
+						(rcv_socket->accept_list).pop_back();
+						memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
+						returnSystemCall(accept_pair.first, fd);
+
+					}
+
+				}
+
+			}
+
+		}
+		else{
+
+		}
 	}
 
 	this->freePacket(packet);

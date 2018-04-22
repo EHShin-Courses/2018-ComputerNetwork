@@ -35,6 +35,7 @@ public:
 	int is_listen;
 	int syscallUUID;
 	int backlog;
+	int pid;
 	struct sockaddr peer_addr;
 
 
@@ -55,7 +56,8 @@ public:
 
 
 struct syn_client{
-	struct sockaddr addr;
+	int ip;
+	short port;
 	int ack_num;
 	int seq_num;
 
@@ -121,7 +123,7 @@ protected:
 	virtual void syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
 	virtual void syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog) final;
 	virtual void syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
-	virtual void syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, int *client_len) final;
+	virtual void syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
