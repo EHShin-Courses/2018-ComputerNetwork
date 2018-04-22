@@ -58,6 +58,10 @@ test_connect1: all
 test_accept1: all
 	@-build/testTCP --gtest_filter="TestEnv_Reliable.TestAccept_Backlog2" --gtest_output=xml:part2.xml
 
+test_accept2: all
+	@-build/testTCP --gtest_filter="TestEnv_Any.TestAccept_MultipleInterface1" --gtest_output=xml:part2.xml
+
+
 doxygen:
 	doxygen doxygen/Doxyfile
 

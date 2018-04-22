@@ -220,9 +220,8 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len){
-
+	//printf("ACCEPT()\n");
 	Socket *server_socket = tcp_context.at({pid, sockfd});
-	printf("ACCEPT()\n");
 	// accept is called before connection is established
 	if(server_socket->establish_list.empty()){
 		server_socket->accept_list.push_back({syscallUUID, client_addr});
@@ -368,6 +367,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		else{
 			// SYN=1 ACK=0
 			// Server recieved SYN
+			printf("got SYN\n");
 			if(rcv_socket->is_listen == 1){
 				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
 					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
@@ -390,11 +390,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 				else{
 					// ignore
+					printf("but backlog full...\n");
+					//printf("# of conns:%d\n", rcv_socket->establish_list.size() + rcv_socket->syn_clients.size());
 				}
 
 			}
 			else{
 				// ignore
+				printf("but not listening...\n");
 			}
 		}
 	}
@@ -405,6 +408,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
 				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
 					if(rcv_tcph_h.seq_num == it->ack_num && rcv_tcph_h.ack_num == it->seq_num){
+						printf("got ACK\n");
 						Socket *socket = new Socket();
 						socket->is_bound = 0;
 						socket->is_listen = 0;
@@ -431,6 +435,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 						int fd = this->createFileDescriptor(socket->pid);
 						socket->sockfd = fd;
 						tcp_context.insert({{socket->pid, fd}, socket});
+
+						//debug: pop syn_client here, should also break loop
+						rcv_socket->syn_clients.erase(it);
+
 						if(rcv_socket->accept_list.empty()){
 							rcv_socket->establish_list.push_back({socket->pid, fd});
 						}
@@ -440,6 +448,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 							memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
 							returnSystemCall(accept_pair.first, fd);
 						}
+						break;
 					
 					}
 					else{
@@ -447,11 +456,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 						printf("expected ACK: %x, recieved ACK: %x\n",it->seq_num,rcv_tcph_h.ack_num);
 						printf("expected SEQ: %x, recieved SEQ: %x\n",it->ack_num,rcv_tcph_h.seq_num);
 					}
-
 				}
-
 			}
-
 		}
 		else{
 			if(rcv_tcph_h.fin_flag == 1){
@@ -482,8 +488,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 
 			}
-
-
 			else if(rcv_socket->sentFIN && (rcv_socket->FIN_seq_num + 1 == rcv_tcph_h.ack_num)){
 				rcv_socket->gotFINACK = 1;
 				UUID close_syscall_UUID = rcv_socket->syscallUUID;
@@ -491,19 +495,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					// socket should be closed
 					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
 					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
-
 				}
 
 				returnSystemCall(close_syscall_UUID, 0);				
 			}
-
 			else{
 				// ACK for actual data
 
 			}
 		}
 	}
-
 	this->freePacket(packet);
 }
 
