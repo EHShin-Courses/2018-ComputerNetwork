@@ -36,6 +36,7 @@ public:
 	int syscallUUID;
 	int backlog;
 	int pid;
+	int sockfd;
 	struct sockaddr peer_addr;
 	int is_connected;
 

@@ -54,6 +54,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket->is_listen = 0;
 	socket->syscallUUID = -1;
 	socket->pid = pid;
+	socket->sockfd = fd;
 	socket->is_connected = 0;
 	socket->gotFIN = 0;
 	socket->sentFIN = 0;
@@ -74,7 +75,6 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	struct tcp_header tcph_h = {0};
 
 	Socket *socket = tcp_context.at({pid, fd});
-
 	if(socket->is_connected == 0){
 		this->removeFileDescriptor(pid, fd);
 		tcp_context.erase({pid, fd});
@@ -419,6 +419,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					set_sockaddr_family(&(socket->peer_addr));
 
 					int fd = this->createFileDescriptor(socket->pid);
+					socket->sockfd = fd;
 					tcp_context.insert({{socket->pid, fd}, socket});
 
 					if(rcv_socket->accept_list.empty()){
@@ -438,7 +439,53 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 		}
 		else{
+			if(rcv_tcph_h.fin_flag == 1){
+				rcv_socket->gotFIN = 1;
 
+				//send ACK for recieved FIN
+
+				new_tcph_h.ack_flag = 1;
+				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
+				new_tcph_h.ack_num = rcv_socket->ack_num;
+
+				new_tcph_h.seq_num = rcv_socket->seq_num++;
+
+				this->hton_ip_header(&new_iph_h, &new_iph_n);
+				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
+
+				send_packet = this->allocatePacket(14+20+20);
+				this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
+				this->set_common_tcp_fields(send_packet);
+				this->sendPacket("IPv4", send_packet);
+
+				if(rcv_socket->gotFINACK == 1){
+					// socket should be closed
+					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
+					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
+
+				}
+
+
+			}
+
+
+			else if(rcv_socket->sentFIN && (rcv_socket->FIN_seq_num + 1 == rcv_tcph_h.ack_num)){
+				rcv_socket->gotFINACK = 1;
+				UUID close_syscall_UUID = rcv_socket->syscallUUID;
+				if(rcv_socket->gotFIN == 1){
+					// socket should be closed
+					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
+					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
+
+				}
+
+				returnSystemCall(close_syscall_UUID, 0);				
+			}
+
+			else{
+				// ACK for actual data
+
+			}
 		}
 	}
 
