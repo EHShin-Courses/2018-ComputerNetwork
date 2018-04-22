@@ -371,16 +371,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			if(rcv_socket->is_listen == 1){
 				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
 					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
-					rcv_socket->syn_clients.push_back(new_syn_client);
-
+					
 					//send SYNACK packet
 					new_tcph_h.syn_flag = 1;
 					new_tcph_h.ack_flag = 1;
 					new_tcph_h.ack_num = new_syn_client.ack_num;
-					new_tcph_h.seq_num = new_syn_client.seq_num;
-					
-					rcv_socket->seq_num++;
-					rcv_socket->ack_num = new_syn_client.ack_num;
+					new_tcph_h.seq_num = new_syn_client.seq_num++;
+
+					rcv_socket->syn_clients.push_back(new_syn_client); //debug: push after updating values
 
 					this->hton_ip_header(&new_iph_h, &new_iph_n);
 					this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
@@ -405,39 +403,49 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		if(rcv_socket->is_listen == 1){
 			std::vector<struct syn_client>::iterator it;
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
-				if(rcv_iph_h.source_ip == (*it).ip && rcv_tcph_h.source_port == (*it).port){
-					Socket *socket = new Socket();
-					socket->is_bound = 0;
-					socket->is_listen = 0;
-					socket->syscallUUID = -1;
-					socket->pid = rcv_socket->pid;
-					socket->is_connected = 1;
-					socket->gotFIN = 0;
-					socket->sentFIN = 0;
-					socket->gotFINACK = 0;
-					socket->FIN_seq_num = 0;
-					socket->addrlen = sizeof(struct sockaddr);
+				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
+					if(rcv_tcph_h.seq_num == it->ack_num && rcv_tcph_h.ack_num == it->seq_num){
+						Socket *socket = new Socket();
+						socket->is_bound = 0;
+						socket->is_listen = 0;
+						socket->syscallUUID = -1;
+						socket->pid = rcv_socket->pid;
+						socket->is_connected = 1;
+						socket->gotFIN = 0;
+						socket->sentFIN = 0;
+						socket->gotFINACK = 0;
+						socket->FIN_seq_num = 0;
+						socket->addrlen = sizeof(struct sockaddr);
 
-					socket->seq_num = rcv_socket->seq_num;				
+						//debug : independent seq/ack num for each connection
+						socket->seq_num = it->seq_num;
+						socket->ack_num = it->ack_num;
 
-					set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
-					set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
-					set_sockaddr_family(&(socket->addr));
-					set_sockaddr_ip(&(socket->peer_addr), rcv_iph_h.source_ip);
-					set_sockaddr_port(&(socket->peer_addr), rcv_tcph_h.source_port);
-					set_sockaddr_family(&(socket->peer_addr));
+						set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
+						set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
+						set_sockaddr_family(&(socket->addr));
+						set_sockaddr_ip(&(socket->peer_addr), rcv_iph_h.source_ip);
+						set_sockaddr_port(&(socket->peer_addr), rcv_tcph_h.source_port);
+						set_sockaddr_family(&(socket->peer_addr));
 
-					int fd = this->createFileDescriptor(socket->pid);
-					socket->sockfd = fd;
-					tcp_context.insert({{socket->pid, fd}, socket});
-					if(rcv_socket->accept_list.empty()){
-						rcv_socket->establish_list.push_back({socket->pid, fd});
+						int fd = this->createFileDescriptor(socket->pid);
+						socket->sockfd = fd;
+						tcp_context.insert({{socket->pid, fd}, socket});
+						if(rcv_socket->accept_list.empty()){
+							rcv_socket->establish_list.push_back({socket->pid, fd});
+						}
+						else{
+							std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
+							(rcv_socket->accept_list).pop_back();
+							memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
+							returnSystemCall(accept_pair.first, fd);
+						}
+					
 					}
 					else{
-						std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
-						(rcv_socket->accept_list).pop_back();
-						memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
-						returnSystemCall(accept_pair.first, fd);
+						printf("recieved ACK but wrong seq or ack num!\n");
+						printf("expected ACK: %x, recieved ACK: %x\n",it->seq_num,rcv_tcph_h.ack_num);
+						printf("expected SEQ: %x, recieved SEQ: %x\n",it->ack_num,rcv_tcph_h.seq_num);
 					}
 
 				}
