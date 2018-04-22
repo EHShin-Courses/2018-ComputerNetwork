@@ -37,6 +37,13 @@ public:
 	int backlog;
 	struct sockaddr peer_addr;
 
+
+	std::vector<std::pair<int, int>> establish_list; // pid, fd
+	std::vector<std::pair<int, struct sockaddr*>> accept_list; // syscallUUID, &client_addr
+	std::vector<struct syn_client> syn_clients;
+
+
+
 public:
 	void set_domain(int domain){
 		this->domain = domain; 
@@ -45,6 +52,15 @@ public:
 		this->type__unused = type__unused;
 	}
 };
+
+
+struct syn_client{
+	struct sockaddr addr;
+	int ack_num;
+	int seq_num;
+
+};
+
 
 struct ip_header{
 	char buffer[12];
@@ -105,6 +121,7 @@ protected:
 	virtual void syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
 	virtual void syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog) final;
 	virtual void syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
+	virtual void syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, int *client_len) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;

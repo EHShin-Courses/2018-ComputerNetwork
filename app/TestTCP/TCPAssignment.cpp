@@ -60,6 +60,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
+
 	this->removeFileDescriptor(pid, fd);
 	tcp_context.erase({pid, fd});
 	// TODO : check if tried to remove existing file descriptor
@@ -178,6 +179,13 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 	this->returnSystemCall(syscallUUID, 0);	
 }
 
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, int *client_len){
+
+
+}
+
+
+
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
 	switch(param.syscallNumber)
@@ -202,9 +210,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
-		// this->syscall_accept(syscallUUID, pid, param.param1_int,
-		// 		static_cast<struct sockaddr*>(param.param2_ptr),
-		// 		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_accept(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
