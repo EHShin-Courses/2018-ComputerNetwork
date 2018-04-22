@@ -37,11 +37,18 @@ public:
 	int backlog;
 	int pid;
 	struct sockaddr peer_addr;
-
+	int is_connected;
 
 	std::vector<std::pair<int, int>> establish_list; // pid, fd
 	std::vector<std::pair<int, struct sockaddr*>> accept_list; // syscallUUID, &client_addr
 	std::vector<struct syn_client> syn_clients;
+
+	int gotFIN;
+	int sentFIN;
+	int gotFINACK;
+	int FIN_seq_num;
+
+
 
 
 

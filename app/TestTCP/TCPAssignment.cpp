@@ -54,6 +54,11 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socket->is_listen = 0;
 	socket->syscallUUID = -1;
 	socket->pid = pid;
+	socket->is_connected = 0;
+	socket->gotFIN = 0;
+	socket->sentFIN = 0;
+	socket->gotFINACK = 0;
+	socket->FIN_seq_num = 0;
 	std::pair<int, int> key = std::make_pair(pid, fd);
 	tcp_context.insert({key, socket});
 	this->returnSystemCall(syscallUUID, fd);
@@ -62,11 +67,44 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 
-	this->removeFileDescriptor(pid, fd);
-	tcp_context.erase({pid, fd});
-	// TODO : check if tried to remove existing file descriptor
-	int ret = 0; 
-	this->returnSystemCall(syscallUUID, ret);
+	int ret; 
+	struct ip_header iph_n = {0};
+	struct ip_header iph_h = {0};
+	struct tcp_header tcph_n = {0};
+	struct tcp_header tcph_h = {0};
+
+	Socket *socket = tcp_context.at({pid, fd});
+
+	if(socket->is_connected == 0){
+		this->removeFileDescriptor(pid, fd);
+		tcp_context.erase({pid, fd});
+		// TODO : check if tried to remove existing file descriptor
+		ret = 0;
+		this->returnSystemCall(syscallUUID, ret);
+	}
+
+	else{
+		// send FIN packet
+		socket->syscallUUID = syscallUUID;
+		socket->sentFIN = 1;
+		socket->FIN_seq_num = socket->seq_num;
+
+		iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
+		iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
+		tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
+		tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
+
+		tcph_h.fin_flag = 1;
+		tcph_h.seq_num = (socket->seq_num)++;
+
+		this->hton_ip_header(&iph_h, &iph_n);
+		this->hton_tcp_header(&tcph_h, &tcph_n);
+
+		Packet *send_packet = this->allocatePacket(14+20+20);
+		this->write_headers(send_packet, &iph_n, &tcph_n);
+		this->set_common_tcp_fields(send_packet);
+		this->sendPacket("IPv4", send_packet);
+	}
 
 }
 
@@ -315,6 +353,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				this->sendPacket("IPv4", send_packet);
 
 				//wake connect()
+
+				rcv_socket->is_connected = 1;
 				this->returnSystemCall(rcv_socket->syscallUUID, 0);
 			}
 			else{
@@ -365,6 +405,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					socket->is_listen = 0;
 					socket->syscallUUID = -1;
 					socket->pid = rcv_socket->pid;
+					socket->is_connected = 1;
+					socket->gotFIN = 0;
+					socket->sentFIN = 0;
+					socket->gotFINACK = 0;
+					socket->FIN_seq_num = 0;
+
 					set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
 					set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
 					set_sockaddr_family(&(socket->addr));
