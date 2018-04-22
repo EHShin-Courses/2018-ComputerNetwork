@@ -222,7 +222,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len){
 
 	Socket *server_socket = tcp_context.at({pid, sockfd});
-
+	printf("ACCEPT()\n");
 	// accept is called before connection is established
 	if(server_socket->establish_list.empty()){
 		server_socket->accept_list.push_back({syscallUUID, client_addr});
