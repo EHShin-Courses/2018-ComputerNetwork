@@ -52,6 +52,9 @@ test_part4: test_part3
 	@echo "Note that passing this test does not mean that you are finished."
 	@echo "Check the pcap file that you have implemented congestion control well."
 
+test_connect1: all
+	@-build/testTCP --gtest_filter="TestEnv_Any.TestClose_Connect_CloseFirst" --gtest_output=xml:part2.xml
+
 doxygen:
 	doxygen doxygen/Doxyfile
 

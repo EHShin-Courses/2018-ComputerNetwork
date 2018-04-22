@@ -145,6 +145,7 @@ protected:
 	short get_sockaddr_port(const struct sockaddr *addr);
 	void set_sockaddr_ip(struct sockaddr *addr, int ip);
 	void set_sockaddr_port(struct sockaddr *addr, short port);
+	void set_sockaddr_family(struct sockaddr *addr);
 
 };
 

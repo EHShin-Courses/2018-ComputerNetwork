@@ -266,9 +266,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			// Client recieved SYNACK
 			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
 
+				this->set_sockaddr_family(&rcv_socket->peer_addr);
 				this->set_sockaddr_ip(&rcv_socket->peer_addr, rcv_iph_h.source_ip);
 				this->set_sockaddr_port(&rcv_socket->peer_addr, rcv_tcph_h.source_port);
-
 
 				//send ACK packet
 				new_tcph_h.source_port = rcv_tcph_h.dest_port;
@@ -442,6 +442,10 @@ void TCPAssignment::set_sockaddr_ip(struct sockaddr *addr, int ip){
 
 void TCPAssignment::set_sockaddr_port(struct sockaddr *addr, short port){
 	((struct sockaddr_in *)addr)->sin_port = htons(port);
+}
+
+void TCPAssignment::set_sockaddr_family(struct sockaddr *addr){
+	((struct sockaddr_in *)addr)->sin_family = AF_INET;
 }
 
 void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
