@@ -61,7 +61,6 @@ protected:
 		long accept_period = atoi(env["ACCEPT_PERIOD"].c_str());
 
 		std::vector<int> client_sockets;
-
 		for(int k=0; k<accept_count; k++)
 		{
 			struct sockaddr_in client_addr;

@@ -109,7 +109,6 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 }
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen){
-
 	int ret = -1;
 	const struct sockaddr *addr2;
 	uint32_t s_addr_any = htonl(INADDR_ANY);
@@ -122,7 +121,8 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 		}
 		else{
 			// printf("here : %d %d\n", (int)element.first.second, (int)sockfd);
-			if(element.first.second == sockfd){
+			// debug : socket is decided with pid and sockfd, not only sockfd.
+			if(element.first.first == pid && element.first.second == sockfd){
 				this->returnSystemCall(syscallUUID, ret);				
 			}
 		}
@@ -328,6 +328,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 	if(rcv_tcph_h.syn_flag == 1){
 		if(rcv_tcph_h.ack_flag == 1){
+			printf("SYNACK\n");
 			// SYN=1 ACK=1
 			// Client recieved SYNACK
 			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
@@ -362,12 +363,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			}
 		}
 		else{
+			printf("server's is_listen : %d\n", rcv_socket->is_listen);
 			// SYN=1 ACK=0
 			// Server recieved SYN
-
 			if(rcv_socket->is_listen == 1){
+				printf("SYN\n");
 				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
-					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, 0, rcv_tcph_h.seq_num + 1};
+					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
 					rcv_socket->syn_clients.push_back(new_syn_client);
 
 					//send SYNACK packet
@@ -375,6 +377,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					new_tcph_h.ack_flag = 1;
 					new_tcph_h.ack_num = new_syn_client.ack_num;
 					new_tcph_h.seq_num = new_syn_client.seq_num;
+					
+					// debug : newly added
+					rcv_socket->seq_num++;
+					rcv_socket->ack_num = new_syn_client.ack_num;
 
 					this->hton_ip_header(&new_iph_h, &new_iph_n);
 					this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
@@ -397,6 +403,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	else{
 		// SYN == 0
 		if(rcv_socket->is_listen == 1){
+			printf("ACK\n");
 			std::vector<struct syn_client>::iterator it;
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
 				if(rcv_iph_h.source_ip == (*it).ip && rcv_tcph_h.source_port == (*it).port){
@@ -410,6 +417,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					socket->sentFIN = 0;
 					socket->gotFINACK = 0;
 					socket->FIN_seq_num = 0;
+					socket->addrlen = sizeof(struct sockaddr); // debug : addrlen added
+
+					// debug : newly added
+					socket->seq_num = rcv_socket->seq_num;				
 
 					set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
 					set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
@@ -421,16 +432,18 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					int fd = this->createFileDescriptor(socket->pid);
 					socket->sockfd = fd;
 					tcp_context.insert({{socket->pid, fd}, socket});
-
+					printf("HELLO?\n");
 					if(rcv_socket->accept_list.empty()){
+						printf("A\n");
 						rcv_socket->establish_list.push_back({socket->pid, fd});
 					}
 					else{
+						printf("B\n");
 						std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
 						(rcv_socket->accept_list).pop_back();
 						memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
 						returnSystemCall(accept_pair.first, fd);
-
+						printf("%d",fd);
 					}
 
 				}
@@ -448,7 +461,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
 				new_tcph_h.ack_num = rcv_socket->ack_num;
 
-				new_tcph_h.seq_num = rcv_socket->seq_num++;
+				new_tcph_h.seq_num = rcv_socket->seq_num; // debug : do not increase : no FINACK's seponse
 
 				this->hton_ip_header(&new_iph_h, &new_iph_n);
 				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);

@@ -1,0 +1,8 @@
+make[1]: Entering directory '/home/cs341/Desktop/KENS2018/src'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/home/cs341/Desktop/KENS2018/src'
+make[1]: Entering directory '/home/cs341/Desktop/KENS2018/app/TestTCP'
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o TCPAssignment.o TCPAssignment.cpp
+<builtin>: recipe for target 'TCPAssignment.o' failed
+make[1]: Leaving directory '/home/cs341/Desktop/KENS2018/app/TestTCP'
+Makefile:10: recipe for target 'all' failed
