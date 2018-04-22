@@ -35,6 +35,8 @@ public:
 	int is_listen;
 	int syscallUUID;
 	int backlog;
+	struct sockaddr peer_addr;
+
 public:
 	void set_domain(int domain){
 		this->domain = domain; 
@@ -102,6 +104,7 @@ protected:
 	virtual void syscall_getsockname(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
 	virtual void syscall_connect(UUID syscallUUID, int pid, int sockfd, const struct sockaddr *addr, socklen_t addrlen) final;
 	virtual void syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog) final;
+	virtual void syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;

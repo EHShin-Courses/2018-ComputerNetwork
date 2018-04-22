@@ -217,9 +217,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case GETPEERNAME:
-		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_getpeername(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	default:
 		assert(0);
@@ -257,6 +257,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			// SYN=1 ACK=1
 			// Client recieved SYNACK
 			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
+
+				this->set_sockaddr_ip(&rcv_socket->peer_addr, rcv_iph_h.source_ip);
+				this->set_sockaddr_port(&rcv_socket->peer_addr, rcv_tcph_h.source_port);
+
 
 				//send ACK packet
 				new_tcph_h.source_port = rcv_tcph_h.dest_port;
@@ -430,6 +434,24 @@ void TCPAssignment::set_sockaddr_ip(struct sockaddr *addr, int ip){
 
 void TCPAssignment::set_sockaddr_port(struct sockaddr *addr, short port){
 	((struct sockaddr_in *)addr)->sin_port = htons(port);
+}
+
+void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+	int ret = -1;
+	try{
+		Socket *socket = tcp_context.at({pid, sockfd});
+		memcpy(addr, &(socket->peer_addr), sizeof(struct sockaddr));
+		*addrlen = sizeof(struct sockaddr);
+		ret = 0;
+		returnSystemCall(syscallUUID, ret);		
+	}
+	catch(const std::out_of_range& oor){
+		returnSystemCall(syscallUUID, ret);
+	}
+
+
+
+
 }
 
 
