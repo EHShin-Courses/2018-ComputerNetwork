@@ -120,8 +120,6 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 			continue;
 		}
 		else{
-			// printf("here : %d %d\n", (int)element.first.second, (int)sockfd);
-			// debug : socket is decided with pid and sockfd, not only sockfd.
 			if(element.first.first == pid && element.first.second == sockfd){
 				this->returnSystemCall(syscallUUID, ret);				
 			}
@@ -131,7 +129,6 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd, const st
 		s_addr_2 = ((const struct sockaddr_in *)addr2)->sin_addr.s_addr;
 
 		if(s_addr_any == s_addr_1 || s_addr_any == s_addr_2 || s_addr_1 == s_addr_2){
-			// printf("%d %d\n",ntohs(((const struct sockaddr_in *)addr)->sin_port), ntohs(((const struct sockaddr_in *)addr2)->sin_port));
 			if(((const struct sockaddr_in *)addr)->sin_port == ((const struct sockaddr_in *)addr2)->sin_port){
 				this->returnSystemCall(syscallUUID, ret);
 			}
@@ -174,6 +171,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 	iph_h.dest_ip = get_sockaddr_ip(addr);
 	tcph_h.dest_port = get_sockaddr_port(addr);
+
+	this->set_sockaddr_family(&client_socket->peer_addr);
+	this->set_sockaddr_ip(&client_socket->peer_addr, iph_h.dest_ip);
+	this->set_sockaddr_port(&client_socket->peer_addr, tcph_h.dest_port);
 
 	int routing_table_index;
 	if(client_socket->is_bound == 1){
@@ -311,7 +312,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
 	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
 	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
-	Socket *rcv_socket = this->find_socket(rcv_tcph_h.dest_port, rcv_iph_h.dest_ip);
+
+	Socket *rcv_socket = this->find_socket(
+		rcv_iph_h.source_ip,
+		rcv_tcph_h.source_port,
+		rcv_iph_h.dest_ip,
+		rcv_tcph_h.dest_port
+	);
+
 	if(rcv_socket == NULL){
 		printf("packetArrived(): No recieve socket\n");
 		freePacket(packet);
@@ -328,14 +336,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 	if(rcv_tcph_h.syn_flag == 1){
 		if(rcv_tcph_h.ack_flag == 1){
-			printf("SYNACK\n");
 			// SYN=1 ACK=1
 			// Client recieved SYNACK
 			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
-
-				this->set_sockaddr_family(&rcv_socket->peer_addr);
-				this->set_sockaddr_ip(&rcv_socket->peer_addr, rcv_iph_h.source_ip);
-				this->set_sockaddr_port(&rcv_socket->peer_addr, rcv_tcph_h.source_port);
 
 				//send ACK packet
 				new_tcph_h.ack_flag = 1;
@@ -363,11 +366,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			}
 		}
 		else{
-			printf("server's is_listen : %d\n", rcv_socket->is_listen);
 			// SYN=1 ACK=0
 			// Server recieved SYN
 			if(rcv_socket->is_listen == 1){
-				printf("SYN\n");
 				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
 					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
 					rcv_socket->syn_clients.push_back(new_syn_client);
@@ -378,7 +379,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					new_tcph_h.ack_num = new_syn_client.ack_num;
 					new_tcph_h.seq_num = new_syn_client.seq_num;
 					
-					// debug : newly added
 					rcv_socket->seq_num++;
 					rcv_socket->ack_num = new_syn_client.ack_num;
 
@@ -403,7 +403,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	else{
 		// SYN == 0
 		if(rcv_socket->is_listen == 1){
-			printf("ACK\n");
 			std::vector<struct syn_client>::iterator it;
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
 				if(rcv_iph_h.source_ip == (*it).ip && rcv_tcph_h.source_port == (*it).port){
@@ -417,9 +416,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					socket->sentFIN = 0;
 					socket->gotFINACK = 0;
 					socket->FIN_seq_num = 0;
-					socket->addrlen = sizeof(struct sockaddr); // debug : addrlen added
+					socket->addrlen = sizeof(struct sockaddr);
 
-					// debug : newly added
 					socket->seq_num = rcv_socket->seq_num;				
 
 					set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
@@ -432,18 +430,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					int fd = this->createFileDescriptor(socket->pid);
 					socket->sockfd = fd;
 					tcp_context.insert({{socket->pid, fd}, socket});
-					printf("HELLO?\n");
 					if(rcv_socket->accept_list.empty()){
-						printf("A\n");
 						rcv_socket->establish_list.push_back({socket->pid, fd});
 					}
 					else{
-						printf("B\n");
 						std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
 						(rcv_socket->accept_list).pop_back();
 						memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
 						returnSystemCall(accept_pair.first, fd);
-						printf("%d",fd);
 					}
 
 				}
@@ -461,7 +455,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
 				new_tcph_h.ack_num = rcv_socket->ack_num;
 
-				new_tcph_h.seq_num = rcv_socket->seq_num; // debug : do not increase : no FINACK's seponse
+				new_tcph_h.seq_num = rcv_socket->seq_num; // do not increase : no FINACK's seponse
 
 				this->hton_ip_header(&new_iph_h, &new_iph_n);
 				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
@@ -513,19 +507,36 @@ void TCPAssignment::timerCallback(void* payload)
 
 /* Helper Functions */
 
-Socket *TCPAssignment::find_socket(short port, int ip){
-	//assume args are host byte ordering
-	port = htons(port);
-	ip = htonl(ip);
+
+/* 	
+	find TCP socket that matches (src ip, src port, dst ip, dst port)
+	if there is no match, return listen socket for dst ip, dst port
+ 	return NULL if nothing to return
+*/
+Socket *TCPAssignment::find_socket(int src_ip, short src_port, int dst_ip, short dst_port){
+	Socket * sock;
+	Socket * listen_sock = NULL;
+	int sock_ip;
 	for(std::pair<std::pair<int, int>, Socket *> element : tcp_context){
-		struct sockaddr_in * temp_addr_in = (struct sockaddr_in *)&(element.second->addr);
-		int temp_ip = temp_addr_in->sin_addr.s_addr;
-		short temp_port = temp_addr_in->sin_port;
-		if((temp_ip == 0 || temp_ip == ip) && (temp_port == port)){
-			return element.second;
-		}		
+		sock = element.second;
+		sock_ip = this->get_sockaddr_ip(&sock->addr);
+		if((sock_ip == 0 || sock_ip == dst_ip)
+			&& this->get_sockaddr_port(&sock->addr) == dst_port){
+			// dst match
+			if(sock->is_listen == 1){
+				listen_sock = sock;
+			}
+			else{
+				if(		(this->get_sockaddr_ip(&sock->peer_addr) == src_ip)
+					&&	(this->get_sockaddr_port(&sock->peer_addr) == src_port)){
+					return sock;
+				}
+				else{
+				}
+			}
+		}
 	}
-	return NULL;
+	return listen_sock;
 }
 
 void TCPAssignment::set_common_tcp_fields(Packet *packet){

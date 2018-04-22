@@ -138,8 +138,7 @@ protected:
 
 
 
-
-	Socket *find_socket(short port, int ip);
+	Socket *find_socket(int src_ip, short src_port, int dst_ip, short dst_port);
 
 	void write_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp);
 	void read_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp);
