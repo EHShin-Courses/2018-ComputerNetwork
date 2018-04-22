@@ -149,7 +149,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		((struct sockaddr_in *)&(client_socket->addr))->sin_port = current_port_number;
 		source_port = current_port_number;
 		current_port_number++;
-
 	}
 
 	uint8_t source_ip[4];
@@ -168,9 +167,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		tcp_header.source_port = source_port;
 		tcp_header.dest_port = (((const struct sockaddr_in *)addr)->sin_port);
 
-
 		// 'ACK packet' attributes
-
 		client_socket->seq_num = 0xfffff402;
 		tcp_header.seq_num = htonl(client_socket->seq_num);
 		client_socket->seq_num++;
@@ -178,20 +175,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		// set SYN flag
 		tcp_header.syn_flag = 1;
 
-
-		tcp_header.window_size = htons(INITIAL_RWND);
-		tcp_header.hlen = 20 / 4;
-
-
-		// +0 : because segment length
-		uint16_t sum = NetworkUtil::tcp_sum(ip_header.source_ip, ip_header.dest_ip, (uint8_t *)&tcp_header, tcp_header.hlen*4+0);
-		sum = ~sum;
-		tcp_header.checksum = htons(sum);
-
 		Packet *send_packet = this->allocatePacket(14 + 20 + 20);
 
-		this->write_packet(send_packet, &ip_header, &tcp_header);
-		
+		this->write_headers(send_packet, &ip_header, &tcp_header);
+		this->set_common_tcp_fields(send_packet);
 
 		this->sendPacket("IPv4", send_packet);
 		struct sockaddr_in *temp = (struct sockaddr_in *)&(client_socket->addr);
@@ -200,7 +187,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 		client_socket->syscallUUID = syscallUUID;
 		
 		// wait for timeout or syn ack returns connect.
-
 	}
 }
 
@@ -262,46 +248,74 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
 
+	Packet* send_packet = NULL;
 
-	struct ip_header receive_ip_header;
-	struct tcp_header receive_tcp_header;
-	struct ip_header new_ip_header;
-	struct tcp_header new_tcp_header;
+	struct ip_header rcv_iph_n = {0};
+	struct ip_header rcv_iph_h = {0};
+	struct tcp_header rcv_tcph_n = {0};
+	struct tcp_header rcv_tcph_h = {0};
 
-	this->read_packet(packet, &receive_ip_header, &receive_tcp_header);
-	Socket *receive_socket = this->find_socket(receive_tcp_header.dest_port, receive_ip_header.dest_ip);
-	if(receive_tcp_header.syn_flag == 1){
-		if(receive_tcp_header.ack_flag == 0){
+	struct ip_header new_iph_n = {0};
+	struct ip_header new_iph_h = {0};
+	struct tcp_header new_tcph_n = {0};
+	struct tcp_header new_tcph_h = {0};
 
-		}
-		else if(receive_tcp_header.ack_flag == 1){
-			// client recieved SYNACK
-			//return from connect()
-			if(receive_socket->seq_num + 1 == receive_tcp_header.ack_num){
-				new_ip_header.source_ip = receive_ip_header.dest_ip;
-				new_ip_header.dest_ip = receive_ip_header.source_ip;
-				new_tcp_header.ack_num = receive_tcp_header.seq_num + 1;
-				receive_socket->ack_num = receive_tcp_header.seq_num + 1;
-				new_tcp_header.seq_num = receive_tcp_header.ack_num;
-				new_tcp_header.ack_flag = 1;
-				receive_socket->seq_num++;
+	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
+	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
+	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
+	Socket *rcv_socket = this->find_socket(rcv_tcph_n.dest_port, rcv_iph_n.dest_ip);
 
-				Packet *send_packet = this->allocatePacket(14 + 20 + 20);
-				this->write_packet(send_packet, &new_ip_header, &new_tcp_header);
+	// When to check recieve_socket != NULL ?
+	// need to recieve data after establishing connection (even for unaccepted connections)
+
+	if(rcv_tcph_h.syn_flag == 1){
+		if(rcv_tcph_h.ack_flag == 1){
+			// SYN=1 ACK=1
+			// Client recieved SYNACK
+			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
+
+				//send ACK packet
+				new_tcph_h.source_port = rcv_tcph_h.dest_port;
+				new_tcph_h.dest_port = rcv_tcph_h.source_port;
+
+				new_iph_h.source_ip = rcv_iph_h.dest_ip;
+				new_iph_h.dest_ip = rcv_iph_h.source_ip;
+
+				new_tcph_h.ack_flag = 1;
+				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
+				new_tcph_h.ack_num = rcv_socket->ack_num;
+
+				new_tcph_h.seq_num = rcv_socket->seq_num;
+				rcv_socket->seq_num++;
+				
+				this->hton_ip_header(&new_iph_h, &new_iph_n);
+				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
+
+				send_packet = this->allocatePacket(14+20+20);
+				this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
+				this->set_common_tcp_fields(send_packet);
 				this->sendPacket("IPv4", send_packet);
-				this->returnSystemCall(receive_socket->syscallUUID, 1);
+
+				//wake connect()
+				this->returnSystemCall(rcv_socket->syscallUUID, 0);
 			}
 			else{
-				printf("wrong ack_num for syn ack packet\n");
+				printf("wrong ack_num for SYNACK\n");
 			}
 		}
+		else{
+			// SYN=1 ACK=0
+			// Server recieved SYN
+		}
 	}
-	else if(receive_tcp_header.syn_flag == 0){
+	else{
+		// SYN == 0
 
 	}
 
 	this->freePacket(packet);
 }
+
 
 void TCPAssignment::timerCallback(void* payload)
 {
@@ -321,9 +335,35 @@ Socket *TCPAssignment::find_socket(short port, int ip){
 		}		
 	}
 	return NULL;
-} 
+}
 
-void TCPAssignment::write_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
+void TCPAssignment::set_common_tcp_fields(Packet *packet){
+
+	int packet_size = packet->getSize();
+	int tcp_ofs = 14+20;
+	int seg_size = packet_size - tcp_ofs;
+
+	struct ip_header iph_n;
+	struct tcp_header tcph_n;
+
+	this->read_headers(packet, &iph_n, &tcph_n);
+
+	// write everything except checksum
+	tcph_n.hlen = 20/4;
+	tcph_n.window_size = htons(INITIAL_RWND); //TODO: must change dynamically
+	this->write_headers(packet, &iph_n, &tcph_n);
+
+	// TCP checksum
+	uint8_t* segbuf = (uint8_t *)malloc(seg_size);
+	packet->readData(tcp_ofs, segbuf, seg_size);
+	uint16_t sum = NetworkUtil::tcp_sum(iph_n.source_ip, iph_n.dest_ip, segbuf, seg_size);
+	sum = ~sum;
+	tcph_n.checksum = htons(sum);
+	free(segbuf);
+	this->write_headers(packet, &iph_n, &tcph_n);
+}
+
+void TCPAssignment::write_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
 	if(ip != NULL){
 		packet->writeData(14, ip, 20);
 	}
@@ -332,7 +372,7 @@ void TCPAssignment::write_packet(Packet *packet, struct ip_header *ip, struct tc
 	}
 }
 
-void TCPAssignment::read_packet(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
+void TCPAssignment::read_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp){
 	if(ip != NULL){
 		packet->readData(14, ip, 20);
 	}
