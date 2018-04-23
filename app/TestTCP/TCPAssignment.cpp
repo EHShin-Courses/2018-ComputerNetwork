@@ -188,7 +188,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 	int source_ip_n;
 	if(this->getHost()->getIPAddr((uint8_t *)&source_ip_n, routing_table_index) == false){
-		printf("connect(): getIPAddr failed\n");
+		//getIPAddr failed
 		this->returnSystemCall(syscallUUID, -1);
 		return;
 	}
@@ -220,7 +220,6 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len){
-	//printf("ACCEPT()\n");
 	Socket *server_socket = tcp_context.at({pid, sockfd});
 	// accept is called before connection is established
 	if(server_socket->establish_list.empty()){
@@ -320,7 +319,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	);
 
 	if(rcv_socket == NULL){
-		printf("packetArrived(): No recieve socket\n");
+		//No recieve socket
 		freePacket(packet);
 		return;
 	}
@@ -361,15 +360,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				this->returnSystemCall(rcv_socket->syscallUUID, 0);
 			}
 			else{
-				printf("wrong ack_num for SYNACK\n");
 			}
 		}
 		else{
 			// SYN=1 ACK=0
 			// Server recieved SYN
-			printf("got SYN\n");
 			if(rcv_socket->is_listen == 1){
-				if(rcv_socket->establish_list.size() + rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
+				if( rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
 					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
 					
 					//send SYNACK packet
@@ -390,14 +387,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 				else{
 					// ignore
-					printf("but backlog full...\n");
-					//printf("# of conns:%d\n", rcv_socket->establish_list.size() + rcv_socket->syn_clients.size());
 				}
 
 			}
 			else{
 				// ignore
-				printf("but not listening...\n");
 			}
 		}
 	}
@@ -408,7 +402,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
 				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
 					if(rcv_tcph_h.seq_num == it->ack_num && rcv_tcph_h.ack_num == it->seq_num){
-						printf("got ACK\n");
+						// got ACK (for handshaking)
 						Socket *socket = new Socket();
 						socket->is_bound = 0;
 						socket->is_listen = 0;
@@ -452,9 +446,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					
 					}
 					else{
-						printf("recieved ACK but wrong seq or ack num!\n");
-						printf("expected ACK: %x, recieved ACK: %x\n",it->seq_num,rcv_tcph_h.ack_num);
-						printf("expected SEQ: %x, recieved SEQ: %x\n",it->ack_num,rcv_tcph_h.seq_num);
+						//recieved ACK, but has wrong seq or ack num
 					}
 				}
 			}
