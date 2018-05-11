@@ -30,7 +30,7 @@ public:
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
-	int ack_num; // expected sequence number for this socket to recieve
+	int ack_num; // expected sequence number for this socket to receive
 	int seq_num; // next sequence number to send
 	int is_listen;
 	int syscallUUID;
@@ -50,7 +50,24 @@ public:
 	int FIN_seq_num;
 
 
+	int cwnd;
 
+	int estimatedRTT;
+	int DevRTT;
+	int TimeoutInterval;
+
+	uint8_t send_buffer[51200];
+	int next_seq_num; // buffer idx of next byte to be sent
+	int send_base; // buffer idx of last cumulatively ACKed byte + 1
+	int next_write; // buffer idx of next byte to be written 
+	std::unordered_map<int ,std::pair<int, int>> sent_unACKed_segments; // (seq, (first index, last index)) for each segment
+
+	uint8_t receive_buffer[51200];
+	int next_receive; // buffer idx of next byte to receive orderly
+	int next_read; // buffer idx of next byte to be read
+	std::unordered_map<int ,std::pair<int, int>> received_unordered_segments; // (seq, (first index, last index)) for each segment
+
+	
 
 
 public:
@@ -132,6 +149,8 @@ protected:
 	virtual void syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog) final;
 	virtual void syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen) final;
 	virtual void syscall_accept(UUID syscallUUID, int pid, int sockfd, struct sockaddr *client_addr, socklen_t *client_len) final;
+	virtual void syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count) final;
+	virtual void syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count) final;
 
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;

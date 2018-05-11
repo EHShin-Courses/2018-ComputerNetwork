@@ -242,7 +242,13 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct
 
 }
 
+void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
 
+}
+
+void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
+
+}
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
 {
@@ -255,10 +261,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
 	case READ:
-		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+		this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case WRITE:
-		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+		this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
 		this->syscall_connect(syscallUUID, pid, param.param1_int,

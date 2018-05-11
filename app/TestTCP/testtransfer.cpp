@@ -216,6 +216,7 @@ protected:
 		uint8_t* send_buffer = (uint8_t*)malloc(buffer_size);
 		uint8_t* recv_buffer = (uint8_t*)malloc(buffer_size);
 
+		printf("buffer_size : %d",buffer_size);
 		int stop = 0;
 		int loop = 0;
 		long total_size = 0;
