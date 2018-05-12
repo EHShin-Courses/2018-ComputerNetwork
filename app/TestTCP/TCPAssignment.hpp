@@ -83,6 +83,23 @@ public:
 	}
 };
 
+enum class TCPState{
+	CLOSED,
+	LISTEN,
+	SYN_RCVD, //not actually used. create Socket object when connection is established
+	SYN_SENT, //active open
+	ESTABLISHED, //data transfer state
+
+	/* passive close */
+	CLOSE_WAIT, //got FIN
+	LAST_ACK, //sent FIN
+
+	/* active close */
+	FIN_WAIT_1, //sent FIN
+	CLOSING, //got FIN, wait for (FIN)ACK (simultaneous close)
+	FIN_WAIT_2, //got (FIN)ACK, wait for FIN
+	TIME_WAIT
+}
 
 struct syn_client{
 	int ip;
@@ -91,7 +108,6 @@ struct syn_client{
 	int seq_num;
 
 };
-
 
 struct ip_header{
 	char buffer[12];
@@ -121,6 +137,8 @@ struct tcp_header{
 	short checksum;
 	short urgent_pointer;
 };
+
+
 
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
