@@ -56,7 +56,7 @@ public:
 	int DevRTT;
 	int TimeoutInterval;
 
-	uint8_t send_buffer[51200];
+	uint8_t *send_buffer;
 	int next_seq_num; // buffer idx of next byte to be sent
 	int send_base; // buffer idx of last cumulatively ACKed byte + 1
 	int next_write; // buffer idx of next byte to be written 
@@ -66,7 +66,7 @@ public:
 	int send_base_seq_num;
 
 
-	uint8_t receive_buffer[51200];
+	uint8_t *receive_buffer;
 	int next_receive; // buffer idx of next byte to receive orderly
 	int next_read; // buffer idx of next byte to be read
 	std::unordered_map<int ,std::pair<int, int>> received_unordered_segments; // (seq, (first index, last index)) for each segment

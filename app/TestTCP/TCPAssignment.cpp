@@ -206,6 +206,8 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 	// Newly Added
 	client_socket->next_seq_num = -1; // to check if SYN ACK is received
+	client_socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
+	client_socket->receive_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
 
 
 	this->hton_ip_header(&iph_h, &iph_n);
@@ -257,6 +259,7 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
+	printf("AASDASD, %d",count);
 	Socket *socket = tcp_context.at({pid, fd});
 	// Newly Added
 	if(count <= 512){ // smaller than or equal to MSS
@@ -493,6 +496,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 						socket->FIN_seq_num = 0;
 						socket->addrlen = sizeof(struct sockaddr);
 
+						// Newly Added
+						socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
+						socket->receive_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
+
 						//debug : independent seq/ack num for each connection
 						socket->seq_num = it->seq_num;
 						socket->ack_num = it->ack_num;
@@ -551,6 +558,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 				if(rcv_socket->gotFINACK == 1){
 					// socket should be closed
+
+					// Newly Added
+					free(rcv_socket->receive_buffer);
+					free(rcv_socket->send_buffer);
+
+
 					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
 					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
 
@@ -567,11 +580,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					// TODO : TIME WAIT, must avoid duplicate removal
 
 					// socket should be closed
+
+					// Newly Added
+					free(rcv_socket->receive_buffer);
+					free(rcv_socket->send_buffer);
+
+
 					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
-
-
-
-
 					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
 				}
 
