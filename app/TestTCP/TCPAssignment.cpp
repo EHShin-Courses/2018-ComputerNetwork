@@ -84,6 +84,10 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	}
 
 	else{
+
+
+		// TODO : FIN retransmission
+
 		// send FIN packet
 		socket->syscallUUID = syscallUUID;
 		socket->sentFIN = 1;
@@ -200,6 +204,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	tcph_h.seq_num = (client_socket->seq_num)++;
 	tcph_h.syn_flag = 1;
 
+	// Newly Added
+	client_socket->next_seq_num = -1; // to check if SYN ACK is received
+
+
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
 
@@ -243,10 +251,66 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct
 }
 
 void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
+	Socket *socket = tcp_context.at({pid, fd});
+
 
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
+	Socket *socket = tcp_context.at({pid, fd});
+	// Newly Added
+	if(count <= 512){ // smaller than or equal to MSS
+		if(socket->next_write + count < 51200){
+			memcpy(socket->send_buffer + socket->next_write, buf, count);
+			socket->next_write = socket->next_write + count;
+
+			// if no congestion control : send packet
+			if(socket->next_write - count == socket->next_seq_num){
+				socket->sent_unACKed_segments.insert({socket->send_base_seq_num + ((socket->next_write - count) - socket->send_base) % 51200,
+						{socket->next_write - count, socket->next_write - 1}});
+
+				struct ip_header iph_n = {0};
+				struct ip_header iph_h = {0};
+				struct tcp_header tcph_n = {0};
+				struct tcp_header tcph_h = {0};
+
+
+				iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
+				iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
+				tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
+				tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
+
+
+				tcph_h.seq_num = socket->next_seq_num;
+				socket->next_seq_num += count;
+				tcph_h.ack_num = socket->ack_num;
+				tcph_h.ack_flag = 1;
+
+				this->hton_ip_header(&iph_h, &iph_n);
+				this->hton_tcp_header(&tcph_h, &tcph_n);
+
+				Packet *send_packet = this->allocatePacket(14 + 20 + 20 + count);
+				this->write_headers(send_packet, &iph_n, &tcph_n);
+				this->set_common_tcp_fields(send_packet);
+				send_packet->writeData(14 + 20 + 20, buf, count);
+				this->sendPacket("IPv4", send_packet);
+			}
+
+
+			// TODO : congestion control
+		}
+		else{
+			memcpy(socket->send_buffer + socket->next_write, buf, 51200 - socket->next_write);
+			memcpy(socket->send_buffer, buf + (51200 - socket->next_write), count - (51200 - socket->next_write));
+			socket->next_write = (socket->next_write + count) % 51200;
+
+
+		}
+
+
+	}
+
+
 
 }
 
@@ -351,6 +415,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 				new_tcph_h.seq_num = rcv_socket->seq_num;
 				rcv_socket->seq_num++;
+
+				// Newly added
+				if(rcv_socket->next_seq_num == -1){
+					rcv_socket->next_seq_num = 0;
+					rcv_socket->send_base = 0;
+					rcv_socket->next_write = 0;
+					rcv_socket->send_base_seq_num = rcv_tcph_h.ack_num;
+				}
 				
 				this->hton_ip_header(&new_iph_h, &new_iph_n);
 				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
@@ -490,8 +562,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				rcv_socket->gotFINACK = 1;
 				UUID close_syscall_UUID = rcv_socket->syscallUUID;
 				if(rcv_socket->gotFIN == 1){
+
+
+					// TODO : TIME WAIT, must avoid duplicate removal
+
 					// socket should be closed
 					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
+
+
+
+
 					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
 				}
 

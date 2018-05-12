@@ -62,6 +62,10 @@ public:
 	int next_write; // buffer idx of next byte to be written 
 	std::unordered_map<int ,std::pair<int, int>> sent_unACKed_segments; // (seq, (first index, last index)) for each segment
 
+	// Newly Added
+	int send_base_seq_num;
+
+
 	uint8_t receive_buffer[51200];
 	int next_receive; // buffer idx of next byte to receive orderly
 	int next_read; // buffer idx of next byte to be read
