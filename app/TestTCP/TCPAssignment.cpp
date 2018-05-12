@@ -253,13 +253,11 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct
 }
 
 void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
-	Socket *socket = tcp_context.at({pid, fd});
-
+	//Socket *socket = tcp_context.at({pid, fd});
 
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
-	printf("AASDASD, %d",count);
 	Socket *socket = tcp_context.at({pid, fd});
 	// Newly Added
 	if(count <= 512){ // smaller than or equal to MSS
@@ -268,7 +266,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 			socket->next_write = socket->next_write + count;
 
 			// if no congestion control : send packet
-			if(socket->next_write - count == socket->next_seq_num){
+			if((socket->next_write - (int)count) == socket->next_seq_num){
 				socket->sent_unACKed_segments.insert({socket->send_base_seq_num + ((socket->next_write - count) - socket->send_base) % 51200,
 						{socket->next_write - count, socket->next_write - 1}});
 
@@ -304,7 +302,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 		}
 		else{
 			memcpy(socket->send_buffer + socket->next_write, buf, 51200 - socket->next_write);
-			memcpy(socket->send_buffer, buf + (51200 - socket->next_write), count - (51200 - socket->next_write));
+			memcpy(socket->send_buffer, (uint8_t *)buf + (51200 - socket->next_write), count - (51200 - socket->next_write));
 			socket->next_write = (socket->next_write + count) % 51200;
 
 
@@ -312,6 +310,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 
 
 	}
+	// TODO : return syscall
 
 
 
