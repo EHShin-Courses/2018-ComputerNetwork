@@ -42,6 +42,12 @@ void TCPAssignment::finalize()
 
 }
 
+Socket::Socket() : establish_list(), accept_list(), syn_clients(),
+sent_unACKed_segments(), received_unordered_segments()
+{
+
+}
+
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
 	int fd = this->createFileDescriptor(pid);
 	if(fd == -1){ // fail
@@ -205,6 +211,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	}
 	iph_h.source_ip = ntohl(source_ip_n);
 	set_sockaddr_ip(&(client_socket->addr), iph_h.source_ip);
+	client_socket->addrlen = sizeof(struct sockaddr);
 
 	//set fields
 	client_socket->seq_num = 0xfffff402;

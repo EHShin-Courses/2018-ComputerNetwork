@@ -92,6 +92,7 @@ public:
 	void set_type__unused(int type__unused){
 		this->type__unused = type__unused;
 	}
+	Socket();
 };
 
 
