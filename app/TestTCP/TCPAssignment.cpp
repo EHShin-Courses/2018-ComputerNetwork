@@ -50,15 +50,11 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	Socket* socket = new Socket();
 	socket->set_domain(domain);
 	socket->set_type__unused(type__unused);
+	socket->state = TCPState::CLOSED;
 	socket->is_bound = 0;
-	socket->is_listen = 0;
 	socket->syscallUUID = -1;
 	socket->pid = pid;
 	socket->sockfd = fd;
-	socket->is_connected = 0;
-	socket->gotFIN = 0;
-	socket->sentFIN = 0;
-	socket->gotFINACK = 0;
 	socket->FIN_seq_num = 0;
 	std::pair<int, int> key = std::make_pair(pid, fd);
 	tcp_context.insert({key, socket});
@@ -75,7 +71,9 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	struct tcp_header tcph_h = {0};
 
 	Socket *socket = tcp_context.at({pid, fd});
-	if(socket->is_connected == 0){
+	//if(socket->is_connected == 0){
+	if(	socket->state == TCPState::CLOSED
+		|| socket->state == TCPState::LISTEN){
 		this->removeFileDescriptor(pid, fd);
 		tcp_context.erase({pid, fd});
 		// TODO : check if tried to remove existing file descriptor
@@ -90,7 +88,16 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 
 		// send FIN packet
 		socket->syscallUUID = syscallUUID;
-		socket->sentFIN = 1;
+
+		//socket->sentFIN = 1;
+		if(socket->state == TCPState::ESTABLISHED){
+			//active close
+			socket->state = TCPState::FIN_WAIT_1;
+		}
+		else if(socket->state == TCPState::CLOSE_WAIT){
+			socket->state = TCPState::LAST_ACK;
+		}
+
 		socket->FIN_seq_num = socket->seq_num;
 
 		iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
@@ -224,7 +231,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog){
 	Socket *server_socket =  tcp_context.at({pid, sockfd});
-	server_socket-> is_listen = 1;
+	server_socket->state = TCPState::LISTEN;
 	server_socket->backlog = backlog;
 	this->returnSystemCall(syscallUUID, 0);	
 }
@@ -311,7 +318,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 
 	}
 	// TODO : return syscall
-	
+
 
 
 }
@@ -436,7 +443,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 				//wake connect()
 
-				rcv_socket->is_connected = 1;
+				rcv_socket->state = TCPState::ESTABLISHED;
 				this->returnSystemCall(rcv_socket->syscallUUID, 0);
 			}
 			else{
@@ -445,7 +452,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		else{
 			// SYN=1 ACK=0
 			// Server recieved SYN
-			if(rcv_socket->is_listen == 1){
+			if(rcv_socket->state == TCPState::LISTEN){
 				if( rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
 					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
 					
@@ -477,7 +484,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	}
 	else{
 		// SYN == 0
-		if(rcv_socket->is_listen == 1){
+		if(rcv_socket->state == TCPState::LISTEN){
 			std::vector<struct syn_client>::iterator it;
 			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
 				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
@@ -485,13 +492,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 						// got ACK (for handshaking)
 						Socket *socket = new Socket();
 						socket->is_bound = 0;
-						socket->is_listen = 0;
+						socket->state = TCPState::ESTABLISHED;
 						socket->syscallUUID = -1;
 						socket->pid = rcv_socket->pid;
-						socket->is_connected = 1;
-						socket->gotFIN = 0;
-						socket->sentFIN = 0;
-						socket->gotFINACK = 0;
+						//socket->is_connected = 1;
 						socket->FIN_seq_num = 0;
 						socket->addrlen = sizeof(struct sockaddr);
 
@@ -537,7 +541,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		}
 		else{
 			if(rcv_tcph_h.fin_flag == 1){
-				rcv_socket->gotFIN = 1;
+				//rcv_socket->gotFIN = 1;
 
 				//send ACK for recieved FIN
 
@@ -555,28 +559,47 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				this->set_common_tcp_fields(send_packet);
 				this->sendPacket("IPv4", send_packet);
 
-				if(rcv_socket->gotFINACK == 1){
+				if(rcv_socket->state == TCPState::FIN_WAIT_2){
 					// socket should be closed
 
 					// Newly Added
 					free(rcv_socket->receive_buffer);
 					free(rcv_socket->send_buffer);
 
-
 					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
 					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
 
 				}
-
+				else if(rcv_socket->state == TCPState::ESTABLISHED){
+					//passive close
+					rcv_socket->state = TCPState::CLOSE_WAIT;
+				}
+				else if(rcv_socket->state == TCPState::FIN_WAIT_1){
+					//simultaneous close
+					rcv_socket->state = TCPState::CLOSING;
+				}else{
+					// TODO: duplicate fin. still must send ACK
+				}
 
 			}
-			else if(rcv_socket->sentFIN && (rcv_socket->FIN_seq_num + 1 == rcv_tcph_h.ack_num)){
-				rcv_socket->gotFINACK = 1;
+			else if((rcv_socket->state == TCPState::FIN_WAIT_1
+					|| rcv_socket->state == TCPState::CLOSING
+					//|| rcv_socket->state == TCPState::FIN_WAIT_2 : ignore duplicate ACK
+					|| rcv_socket->state == TCPState::LAST_ACK)
+					&& (rcv_socket->FIN_seq_num + 1 == rcv_tcph_h.ack_num)){
+
+				if(rcv_socket->state == TCPState::FIN_WAIT_1){
+					rcv_socket->state = TCPState::FIN_WAIT_2;
+					/*TODO: need direct transition from FIN_WAIT_1 to TIME_WAIT
+					when FIN and (FIN's)ACK is in same packet */
+				}
+
 				UUID close_syscall_UUID = rcv_socket->syscallUUID;
-				if(rcv_socket->gotFIN == 1){
 
+				if(rcv_socket->state == TCPState::LAST_ACK
+					|| rcv_socket->state == TCPState::CLOSING){
 
-					// TODO : TIME WAIT, must avoid duplicate removal
+					// TODO : TIME WAIT (for CLOSING), must avoid duplicate removal
 
 					// socket should be closed
 
@@ -624,7 +647,7 @@ Socket *TCPAssignment::find_socket(int src_ip, short src_port, int dst_ip, short
 		if((sock_ip == 0 || sock_ip == dst_ip)
 			&& this->get_sockaddr_port(&sock->addr) == dst_port){
 			// dst match
-			if(sock->is_listen == 1){
+			if(sock->state == TCPState::LISTEN){
 				listen_sock = sock;
 			}
 			else{

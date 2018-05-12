@@ -22,66 +22,6 @@
 
 namespace E
 {
-// Socket : open socket's information
-class Socket{
-public:
-	int domain;
-	int type__unused;
-	struct sockaddr addr;
-	socklen_t addrlen;	
-	int is_bound;
-	int ack_num; // expected sequence number for this socket to receive
-	int seq_num; // next sequence number to send
-	int is_listen;
-	int syscallUUID;
-	int backlog;
-	int pid;
-	int sockfd;
-	struct sockaddr peer_addr;
-	int is_connected;
-
-	std::vector<std::pair<int, int>> establish_list; // pid, fd
-	std::vector<std::pair<int, struct sockaddr*>> accept_list; // syscallUUID, &client_addr
-	std::vector<struct syn_client> syn_clients;
-
-	int gotFIN;
-	int sentFIN;
-	int gotFINACK;
-	int FIN_seq_num;
-
-
-	int cwnd;
-
-	int estimatedRTT;
-	int DevRTT;
-	int TimeoutInterval;
-
-	uint8_t *send_buffer;
-	int next_seq_num; // buffer idx of next byte to be sent
-	int send_base; // buffer idx of last cumulatively ACKed byte + 1
-	int next_write; // buffer idx of next byte to be written 
-	std::unordered_map<int ,std::pair<int, int>> sent_unACKed_segments; // (seq, (first index, last index)) for each segment
-
-	// Newly Added
-	int send_base_seq_num;
-
-
-	uint8_t *receive_buffer;
-	int next_receive; // buffer idx of next byte to receive orderly
-	int next_read; // buffer idx of next byte to be read
-	std::unordered_map<int ,std::pair<int, int>> received_unordered_segments; // (seq, (first index, last index)) for each segment
-
-	
-
-
-public:
-	void set_domain(int domain){
-		this->domain = domain; 
-	}
-	void set_type__unused(int type__unused){
-		this->type__unused = type__unused;
-	}
-};
 
 enum class TCPState{
 	CLOSED,
@@ -99,7 +39,62 @@ enum class TCPState{
 	CLOSING, //got FIN, wait for (FIN)ACK (simultaneous close)
 	FIN_WAIT_2, //got (FIN)ACK, wait for FIN
 	TIME_WAIT
-}
+};
+
+// Socket : open socket's information
+class Socket{
+public:
+	int domain;
+	int type__unused;
+	struct sockaddr addr;
+	socklen_t addrlen;	
+	int is_bound;
+	int ack_num; // expected sequence number for this socket to receive
+	int seq_num; // next sequence number to send
+	int syscallUUID;
+	int backlog;
+	int pid;
+	int sockfd;
+	struct sockaddr peer_addr;
+	TCPState state;
+
+	std::vector<std::pair<int, int>> establish_list; // pid, fd
+	std::vector<std::pair<int, struct sockaddr*>> accept_list; // syscallUUID, &client_addr
+	std::vector<struct syn_client> syn_clients;
+
+	int FIN_seq_num;
+
+	int cwnd;
+
+	int estimatedRTT;
+	int DevRTT;
+	int TimeoutInterval;
+
+	uint8_t *send_buffer;
+	int next_seq_num; // buffer idx of next byte to be sent
+	int send_base; // buffer idx of last cumulatively ACKed byte + 1
+	int next_write; // buffer idx of next byte to be written 
+	std::unordered_map<int ,std::pair<int, int>> sent_unACKed_segments; // (seq, (first index, last index)) for each segment
+
+	// Newly Added
+	int send_base_seq_num;
+
+	uint8_t *receive_buffer;
+	int next_receive; // buffer idx of next byte to receive orderly
+	int next_read; // buffer idx of next byte to be read
+	std::unordered_map<int ,std::pair<int, int>> received_unordered_segments; // (seq, (first index, last index)) for each segment
+
+
+public:
+	void set_domain(int domain){
+		this->domain = domain; 
+	}
+	void set_type__unused(int type__unused){
+		this->type__unused = type__unused;
+	}
+};
+
+
 
 struct syn_client{
 	int ip;
