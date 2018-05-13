@@ -285,15 +285,37 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
 	Socket *socket = tcp_context.at({pid, fd});
 	// Newly Added
-	if(count <= 512){ // smaller than or equal to MSS
-		if(socket->next_write + count < 51200){
-			memcpy(socket->send_buffer + socket->next_write, buf, count);
-			socket->next_write = socket->next_write + count;
+	int count_left = count;
+	int diff_next_seq_base = socket->next_seq_num - socket->send_base;
+
+	int return_right_now = 1;
+
+	while(count_left != 0){
+		int num_to_send;
+		if(count_left > 512){
+			num_to_send = 512;
+		}
+		else{
+			num_to_send = count_left;
+		}
+
+
+		// NOT DONE, check if write buffer is full. If so, return is defered.
+		printf("%d %d\n", (socket->next_seq_num + num_to_send) % 51200 - socket->send_base, diff_next_seq_base);
+		if((((socket->next_seq_num + num_to_send) % 51200 - socket->send_base) < -1 && diff_next_seq_base >= -1)
+			|| (((socket->next_seq_num + num_to_send) % 51200 - socket->send_base) >= -1 && diff_next_seq_base < -1)){
+			return_right_now = 0;
+			break;
+		}
+
+		if(socket->next_write + num_to_send < 51200){
+			memcpy(socket->send_buffer + socket->next_write, buf, num_to_send);
+			socket->next_write = socket->next_write + num_to_send;
 
 			// if no congestion control : send packet
-			if((socket->next_write - (int)count) == socket->next_seq_num){
+			if((socket->next_write - num_to_send) == socket->next_seq_num){
 				socket->sent_unACKed_segments.insert({socket->send_base_seq_num + ((socket->next_write - count) - socket->send_base) % 51200,
-						{socket->next_write - count, socket->next_write - 1}});
+						{socket->next_write - num_to_send, socket->next_write - 1}});
 
 				struct ip_header iph_n = {0};
 				struct ip_header iph_h = {0};
@@ -307,18 +329,18 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 				tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
 
 
-				tcph_h.seq_num = socket->next_seq_num;
-				socket->next_seq_num += count;
+				tcph_h.seq_num = (socket->next_seq_num - socket->send_base + socket->send_base_seq_num);
+				socket->next_seq_num += num_to_send;
 				tcph_h.ack_num = socket->ack_num;
 				tcph_h.ack_flag = 1;
 
 				this->hton_ip_header(&iph_h, &iph_n);
 				this->hton_tcp_header(&tcph_h, &tcph_n);
 
-				Packet *send_packet = this->allocatePacket(14 + 20 + 20 + count);
+				Packet *send_packet = this->allocatePacket(14 + 20 + 20 + num_to_send);
 				this->write_headers(send_packet, &iph_n, &tcph_n);
+				send_packet->writeData(14 + 20 + 20, buf + (count - count_left), num_to_send);
 				this->set_common_tcp_fields(send_packet);
-				send_packet->writeData(14 + 20 + 20, buf, count);
 				this->sendPacket("IPv4", send_packet);
 			}
 
@@ -333,12 +355,22 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 
 		}
 
-
+		if(count_left > 512){
+			count_left -= 512;
+		}
+		else{
+			count_left = 0;
+		}
 	}
 	// TODO : return syscall
-
-
-
+	socket->seq_num = socket->seq_num + (count - count_left);
+	if(return_right_now == 1){
+		returnSystemCall(syscallUUID, count - count_left);
+	}
+	else{
+		socket->syscallUUID = syscallUUID;
+		socket->return_num = count - count_left;
+	}
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
@@ -551,6 +583,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		}
 	}
 	if(ACK){ // NOT "else if" : (FIN_WAIT_1-(CLOSING)->TIME_WAIT)
+
+		// added : ESTABLISHED - data transfering state
+		if(socket->state == TCPState::ESTABLISHED){
+			if(packet->getSize() == 0){ // client receiving ACK of data 
+				socket->send_base += (rcv_tcph_h.ack_num - socket->send_base_seq_num);
+				socket->send_base_seq_num = rcv_tcph_h.ack_num;
+			}
+		}
+
+
 		if(socket->state == TCPState::FIN_WAIT_1){
 			socket->state = TCPState::FIN_WAIT_2;
 		}

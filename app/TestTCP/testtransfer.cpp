@@ -102,17 +102,21 @@ protected:
 		int stop = 0;
 		int loop = 0;
 		long total_size = 0;
+		printf("is_send : %d",is_send);
 		while(!stop)
 		{
+			printf("%d\n",total_size);
 			for(int k=0; k<buffer_size; k++)
 				send_buffer[k] = rand_r(&seed) & 0xFF;
 
 			if(is_send)
 			{
+				printf("WTF?\n");
 				int remaining = buffer_size;
 				int write_byte = 0;
 				while((write_byte = write(client_fd, send_buffer + (buffer_size - remaining), remaining)) >= 0)
 				{
+					printf("%d\n",total_size);
 					total_size += write_byte;
 					remaining -= write_byte;
 					EXPECT_GE(remaining, 0);
@@ -124,6 +128,7 @@ protected:
 			}
 			else
 			{
+				printf("HELLO?\n");
 				int remaining = buffer_size;
 				int read_byte = 0;
 				while((read_byte = read(client_fd, recv_buffer + (buffer_size - remaining), remaining)) >= 0)
@@ -152,7 +157,7 @@ protected:
 
 		free(send_buffer);
 		free(recv_buffer);
-
+		printf("%d %d",expect_size, total_size);
 		EXPECT_EQ(expect_size, total_size);
 
 		close(client_fd);
@@ -216,7 +221,6 @@ protected:
 		uint8_t* send_buffer = (uint8_t*)malloc(buffer_size);
 		uint8_t* recv_buffer = (uint8_t*)malloc(buffer_size);
 
-		printf("buffer_size : %d",buffer_size);
 		int stop = 0;
 		int loop = 0;
 		long total_size = 0;
@@ -270,9 +274,7 @@ protected:
 
 		free(send_buffer);
 		free(recv_buffer);
-
 		EXPECT_EQ(expect_size, total_size);
-
 		close(client_socket);
 	}
 };

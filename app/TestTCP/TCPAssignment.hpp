@@ -78,6 +78,7 @@ public:
 
 	// Newly Added
 	int send_base_seq_num;
+	int return_num;
 
 	uint8_t *receive_buffer;
 	int next_receive; // buffer idx of next byte to receive orderly
