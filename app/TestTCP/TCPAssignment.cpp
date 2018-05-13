@@ -42,10 +42,16 @@ void TCPAssignment::finalize()
 
 }
 
-Socket::Socket() : establish_list(), accept_list(), syn_clients(),
+Socket::Socket(int pid, int fd, TCPState state) : establish_list(), accept_list(), syn_clients(),
 sent_unACKed_segments(), received_unordered_segments()
-{
-
+{	
+	this->is_bound = 0;
+	this->syscallUUID = -1;
+	this->FIN_seq_num = 0;
+	this->pid = pid;
+	this->state = state;
+	this->addrlen = sizeof(struct sockaddr);
+	this->sockfd = fd;
 }
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
@@ -53,19 +59,9 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	if(fd == -1){ // fail
 		this->returnSystemCall(syscallUUID, fd);
 	}
-	Socket* socket = new Socket();
-	socket->set_domain(domain);
-	socket->set_type__unused(type__unused);
-	socket->state = TCPState::CLOSED;
-	socket->is_bound = 0;
-	socket->syscallUUID = -1;
-	socket->pid = pid;
-	socket->sockfd = fd;
-	socket->FIN_seq_num = 0;
-	std::pair<int, int> key = std::make_pair(pid, fd);
-	tcp_context.insert({key, socket});
+	Socket* socket = new Socket(pid, fd, TCPState::CLOSED);
+	tcp_context.insert({{pid, fd}, socket});
 	this->returnSystemCall(syscallUUID, fd);
-
 }
 
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
@@ -211,7 +207,6 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	}
 	iph_h.source_ip = ntohl(source_ip_n);
 	set_sockaddr_ip(&(client_socket->addr), iph_h.source_ip);
-	client_socket->addrlen = sizeof(struct sockaddr);
 
 	//set fields
 	client_socket->seq_num = 0xfffff402;
@@ -497,14 +492,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
 					if(rcv_tcph_h.seq_num == it->ack_num && rcv_tcph_h.ack_num == it->seq_num){
 						// got ACK (for handshaking)
-						Socket *socket = new Socket();
-						socket->is_bound = 0;
-						socket->state = TCPState::ESTABLISHED;
-						socket->syscallUUID = -1;
-						socket->pid = rcv_socket->pid;
-						//socket->is_connected = 1;
-						socket->FIN_seq_num = 0;
-						socket->addrlen = sizeof(struct sockaddr);
+						
+
+						int fd = this->createFileDescriptor(rcv_socket->pid);
+						Socket *socket = new Socket(rcv_socket->pid, fd, TCPState::ESTABLISHED);
 
 						// Newly Added
 						socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
@@ -521,8 +512,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 						set_sockaddr_port(&(socket->peer_addr), rcv_tcph_h.source_port);
 						set_sockaddr_family(&(socket->peer_addr));
 
-						int fd = this->createFileDescriptor(socket->pid);
-						socket->sockfd = fd;
 						tcp_context.insert({{socket->pid, fd}, socket});
 
 						//debug: pop syn_client here, should also break loop

@@ -44,8 +44,6 @@ enum class TCPState{
 // Socket : open socket's information
 class Socket{
 public:
-	int domain;
-	int type__unused;
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
@@ -86,13 +84,7 @@ public:
 
 
 public:
-	void set_domain(int domain){
-		this->domain = domain; 
-	}
-	void set_type__unused(int type__unused){
-		this->type__unused = type__unused;
-	}
-	Socket();
+	Socket(int pid, int fd, TCPState state);
 };
 
 
