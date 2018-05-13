@@ -23,6 +23,8 @@
 namespace E
 {
 
+class TCPAssignment;
+
 enum class TCPState{
 	CLOSED,
 	LISTEN,
@@ -85,6 +87,7 @@ public:
 
 public:
 	Socket(int pid, int fd, TCPState state);
+	virtual ~Socket();
 };
 
 
@@ -166,7 +169,7 @@ protected:
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 
 
-
+	bool confirm_syn_client(Socket* socket, int ip, short port, int sn, int an);
 	Socket *find_socket(int src_ip, short src_port, int dst_ip, short dst_port);
 
 	void write_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp);

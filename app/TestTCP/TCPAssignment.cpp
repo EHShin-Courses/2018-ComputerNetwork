@@ -45,13 +45,23 @@ void TCPAssignment::finalize()
 Socket::Socket(int pid, int fd, TCPState state) : establish_list(), accept_list(), syn_clients(),
 sent_unACKed_segments(), received_unordered_segments()
 {	
+	this->sockfd = fd;
 	this->is_bound = 0;
 	this->syscallUUID = -1;
 	this->FIN_seq_num = 0;
 	this->pid = pid;
 	this->state = state;
 	this->addrlen = sizeof(struct sockaddr);
-	this->sockfd = fd;
+	this->send_buffer = NULL;
+	this->receive_buffer = NULL;
+}
+
+Socket::~Socket()
+{
+	if(this->send_buffer != NULL){
+		free(this->send_buffer);
+		free(this->receive_buffer);
+	}
 }
 
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
@@ -59,8 +69,10 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	if(fd == -1){ // fail
 		this->returnSystemCall(syscallUUID, fd);
 	}
-	Socket* socket = new Socket(pid, fd, TCPState::CLOSED);
-	tcp_context.insert({{pid, fd}, socket});
+	else{
+		Socket* socket = new Socket(pid, fd, TCPState::CLOSED);
+		tcp_context.insert({{socket->pid, fd}, socket});
+	}
 	this->returnSystemCall(syscallUUID, fd);
 }
 
@@ -89,7 +101,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 		// TODO : FIN retransmission
 
 		// send FIN packet
-		socket->syscallUUID = syscallUUID;
+		//socket->syscallUUID = syscallUUID;
 
 		//socket->sentFIN = 1;
 		if(socket->state == TCPState::ESTABLISHED){
@@ -117,6 +129,9 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 		this->write_headers(send_packet, &iph_n, &tcph_n);
 		this->set_common_tcp_fields(send_packet);
 		this->sendPacket("IPv4", send_packet);
+
+		//newly added: why not return immediately?
+		this->returnSystemCall(syscallUUID, 0);
 	}
 
 }
@@ -218,6 +233,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 	client_socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
 	client_socket->receive_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
 
+	client_socket->state = TCPState::SYN_SENT;
 
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
@@ -375,9 +391,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-
-	Packet* send_packet = NULL;
-
 	struct ip_header rcv_iph_n = {0};
 	struct ip_header rcv_iph_h = {0};
 	struct tcp_header rcv_tcph_n = {0};
@@ -387,235 +400,187 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	struct ip_header new_iph_h = {0};
 	struct tcp_header new_tcph_n = {0};
 	struct tcp_header new_tcph_h = {0};
+	int payload_size = -1; // -1: no send
+	uint8_t* payload_buf = NULL;
 
+	// read packet
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
 	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
 	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
+	bool SYN = (rcv_tcph_h.syn_flag == 1);
+	bool ACK = (rcv_tcph_h.ack_flag == 1);
+	bool FIN = (rcv_tcph_h.fin_flag == 1);
 
-	Socket *rcv_socket = this->find_socket(
+	Socket *socket = this->find_socket(
 		rcv_iph_h.source_ip,
 		rcv_tcph_h.source_port,
 		rcv_iph_h.dest_ip,
 		rcv_tcph_h.dest_port
 	);
-
-	if(rcv_socket == NULL){
-		//No recieve socket
+	if(socket == NULL){
+		//No socket to handle packet
 		freePacket(packet);
 		return;
 	}
 
+	//basic fields for answering
 	new_tcph_h.source_port = rcv_tcph_h.dest_port;
 	new_tcph_h.dest_port = rcv_tcph_h.source_port;
 	new_iph_h.source_ip = rcv_iph_h.dest_ip;
 	new_iph_h.dest_ip = rcv_iph_h.source_ip;
 
-	// When to check recieve_socket != NULL ?
-	// need to recieve data after establishing connection (even for unaccepted connections)
+	// 3-way handshaking
+	if(SYN && !ACK && socket->state == TCPState::LISTEN){
+		//server received SYN
+		if(socket->syn_clients.size() < (size_t)(socket->backlog)){
+			//socket->state = TCPState::SYNRCVD is omitted
 
-	if(rcv_tcph_h.syn_flag == 1){
-		if(rcv_tcph_h.ack_flag == 1){
-			// SYN=1 ACK=1
-			// Client recieved SYNACK
-			if(rcv_socket->seq_num == rcv_tcph_h.ack_num){
+			//remember approaching client
+			struct syn_client new_sc = {
+				rcv_iph_h.source_ip,
+				rcv_tcph_h.source_port,
+				rcv_tcph_h.seq_num + 1,
+				0
+			};
+			//set SYNACK fields
+			payload_size = 0;
+			new_tcph_h.syn_flag = 1;
+			new_tcph_h.ack_flag = 1;
+			new_tcph_h.ack_num = new_sc.ack_num;
+			new_tcph_h.seq_num = new_sc.seq_num++;//update before push_back
 
-				//send ACK packet
-				new_tcph_h.ack_flag = 1;
-				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
-				new_tcph_h.ack_num = rcv_socket->ack_num;
-
-				new_tcph_h.seq_num = rcv_socket->seq_num;
-				rcv_socket->seq_num++;
-
-				// Newly added
-				if(rcv_socket->next_seq_num == -1){
-					rcv_socket->next_seq_num = 0;
-					rcv_socket->send_base = 0;
-					rcv_socket->next_write = 0;
-					rcv_socket->send_base_seq_num = rcv_tcph_h.ack_num;
-				}
-				
-				this->hton_ip_header(&new_iph_h, &new_iph_n);
-				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
-
-				send_packet = this->allocatePacket(14+20+20);
-				this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
-				this->set_common_tcp_fields(send_packet);
-				this->sendPacket("IPv4", send_packet);
-
-				//wake connect()
-
-				rcv_socket->state = TCPState::ESTABLISHED;
-				this->returnSystemCall(rcv_socket->syscallUUID, 0);
-			}
-			else{
-			}
+			socket->syn_clients.push_back(new_sc);
 		}
 		else{
-			// SYN=1 ACK=0
-			// Server recieved SYN
-			if(rcv_socket->state == TCPState::LISTEN){
-				if( rcv_socket->syn_clients.size() < (unsigned)(rcv_socket->backlog)){
-					struct syn_client new_syn_client = {rcv_iph_h.source_ip, rcv_tcph_h.source_port, rcv_tcph_h.seq_num + 1, 0};
-					
-					//send SYNACK packet
-					new_tcph_h.syn_flag = 1;
-					new_tcph_h.ack_flag = 1;
-					new_tcph_h.ack_num = new_syn_client.ack_num;
-					new_tcph_h.seq_num = new_syn_client.seq_num++;
-
-					rcv_socket->syn_clients.push_back(new_syn_client); //debug: push after updating values
-
-					this->hton_ip_header(&new_iph_h, &new_iph_n);
-					this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
-
-					send_packet = this->allocatePacket(14+20+20);
-					this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
-					this->set_common_tcp_fields(send_packet);
-					this->sendPacket("IPv4", send_packet);
-				}
-				else{
-					// ignore
-				}
-
-			}
-			else{
-				// ignore
-			}
+			//backlog full, ignore.
 		}
 	}
-	else{
-		// SYN == 0
-		if(rcv_socket->state == TCPState::LISTEN){
-			std::vector<struct syn_client>::iterator it;
-			for(it = rcv_socket->syn_clients.begin(); it != rcv_socket->syn_clients.end(); it++){
-				if(rcv_iph_h.source_ip == it->ip && rcv_tcph_h.source_port == it->port){
-					if(rcv_tcph_h.seq_num == it->ack_num && rcv_tcph_h.ack_num == it->seq_num){
-						// got ACK (for handshaking)
-						
+	if(SYN && ACK && socket->state == TCPState::SYN_SENT){
+		//client recieved SYNACK
+		if(socket->seq_num == rcv_tcph_h.ack_num){
+			//set ACK fields
+			payload_size = 0;
+			new_tcph_h.ack_flag = 1;
+			socket->ack_num = rcv_tcph_h.seq_num + 1;
+			new_tcph_h.ack_num = socket->ack_num;
+			new_tcph_h.seq_num = socket->seq_num++;
 
-						int fd = this->createFileDescriptor(rcv_socket->pid);
-						Socket *socket = new Socket(rcv_socket->pid, fd, TCPState::ESTABLISHED);
+			//set Socket fields
+			socket->state = TCPState::ESTABLISHED;
+			socket->next_seq_num = 0;
+			socket->send_base = 0;
+			socket->next_write = 0;
+			socket->send_base_seq_num = rcv_tcph_h.ack_num;
 
-						// Newly Added
-						socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
-						socket->receive_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
-
-						//debug : independent seq/ack num for each connection
-						socket->seq_num = it->seq_num;
-						socket->ack_num = it->ack_num;
-
-						set_sockaddr_ip(&(socket->addr), rcv_iph_h.dest_ip);
-						set_sockaddr_port(&(socket->addr), rcv_tcph_h.dest_port);
-						set_sockaddr_family(&(socket->addr));
-						set_sockaddr_ip(&(socket->peer_addr), rcv_iph_h.source_ip);
-						set_sockaddr_port(&(socket->peer_addr), rcv_tcph_h.source_port);
-						set_sockaddr_family(&(socket->peer_addr));
-
-						tcp_context.insert({{socket->pid, fd}, socket});
-
-						//debug: pop syn_client here, should also break loop
-						rcv_socket->syn_clients.erase(it);
-
-						if(rcv_socket->accept_list.empty()){
-							rcv_socket->establish_list.push_back({socket->pid, fd});
-						}
-						else{
-							std::pair<int, struct sockaddr *> accept_pair = (rcv_socket->accept_list).back();
-							(rcv_socket->accept_list).pop_back();
-							memcpy(accept_pair.second, &(socket->peer_addr), sizeof(struct sockaddr));
-							returnSystemCall(accept_pair.first, fd);
-						}
-						break;
-					
-					}
-					else{
-						//recieved ACK, but has wrong seq or ack num
-					}
-				}
-			}
+			//return from connect()
+			this->returnSystemCall(socket->syscallUUID, 0);
 		}
 		else{
-			if(rcv_tcph_h.fin_flag == 1){
-				//rcv_socket->gotFIN = 1;
-
-				//send ACK for recieved FIN
-
-				new_tcph_h.ack_flag = 1;
-				rcv_socket->ack_num = rcv_tcph_h.seq_num + 1;
-				new_tcph_h.ack_num = rcv_socket->ack_num;
-
-				new_tcph_h.seq_num = rcv_socket->seq_num; // do not increase : no FINACK's seponse
-
-				this->hton_ip_header(&new_iph_h, &new_iph_n);
-				this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
-
-				send_packet = this->allocatePacket(14+20+20);
-				this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
-				this->set_common_tcp_fields(send_packet);
-				this->sendPacket("IPv4", send_packet);
-
-				if(rcv_socket->state == TCPState::FIN_WAIT_2){
-					// socket should be closed
-
-					// Newly Added
-					free(rcv_socket->receive_buffer);
-					free(rcv_socket->send_buffer);
-
-					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
-					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
-
-				}
-				else if(rcv_socket->state == TCPState::ESTABLISHED){
-					//passive close
-					rcv_socket->state = TCPState::CLOSE_WAIT;
-				}
-				else if(rcv_socket->state == TCPState::FIN_WAIT_1){
-					//simultaneous close
-					rcv_socket->state = TCPState::CLOSING;
-				}else{
-					// TODO: duplicate fin. still must send ACK
-				}
-
-			}
-			else if((rcv_socket->state == TCPState::FIN_WAIT_1
-					|| rcv_socket->state == TCPState::CLOSING
-					//|| rcv_socket->state == TCPState::FIN_WAIT_2 : ignore duplicate ACK
-					|| rcv_socket->state == TCPState::LAST_ACK)
-					&& (rcv_socket->FIN_seq_num + 1 == rcv_tcph_h.ack_num)){
-
-				if(rcv_socket->state == TCPState::FIN_WAIT_1){
-					rcv_socket->state = TCPState::FIN_WAIT_2;
-					/*TODO: need direct transition from FIN_WAIT_1 to TIME_WAIT
-					when FIN and (FIN's)ACK is in same packet */
-				}
-
-				UUID close_syscall_UUID = rcv_socket->syscallUUID;
-
-				if(rcv_socket->state == TCPState::LAST_ACK
-					|| rcv_socket->state == TCPState::CLOSING){
-
-					// TODO : TIME WAIT (for CLOSING), must avoid duplicate removal
-
-					// socket should be closed
-
-					// Newly Added
-					free(rcv_socket->receive_buffer);
-					free(rcv_socket->send_buffer);
-
-
-					this->removeFileDescriptor(rcv_socket->pid, rcv_socket->sockfd);
-					tcp_context.erase({rcv_socket->pid, rcv_socket->sockfd});
-				}
-
-				returnSystemCall(close_syscall_UUID, 0);				
-			}
-			else{
-				// ACK for actual data
-
-			}
+			//wrong ACK#. ignore
 		}
 	}
+	if(!SYN && ACK && socket->state == TCPState::LISTEN){
+		bool sc_ok = this->confirm_syn_client(
+			socket,
+			rcv_iph_h.source_ip,
+			rcv_tcph_h.source_port,
+			rcv_tcph_h.ack_num,
+			rcv_tcph_h.seq_num
+		);
+		if(sc_ok){
+			//server got ACK, establishes connection
+			//conceptually, TCP state condition is SYN_RCVD
+			//but let it as LISTEN b/c we lazily allocate Socket
+			//i.e. when connection is confirmed
+
+			int fd = this->createFileDescriptor(socket->pid);
+			Socket *new_socket = new Socket(socket->pid, fd, TCPState::ESTABLISHED);
+
+			new_socket->seq_num = rcv_tcph_h.ack_num;
+			new_socket->ack_num = rcv_tcph_h.seq_num;
+
+			new_socket->send_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
+			new_socket->receive_buffer = (uint8_t *)malloc(51200 * sizeof(uint8_t));
+			set_sockaddr_ip(&(new_socket->addr), rcv_iph_h.dest_ip);
+			set_sockaddr_port(&(new_socket->addr), rcv_tcph_h.dest_port);
+			set_sockaddr_family(&(new_socket->addr));
+			set_sockaddr_ip(&(new_socket->peer_addr), rcv_iph_h.source_ip);
+			set_sockaddr_port(&(new_socket->peer_addr), rcv_tcph_h.source_port);
+			set_sockaddr_family(&(new_socket->peer_addr));
+
+			tcp_context.insert({{new_socket->pid, fd}, new_socket});
+
+			if(socket->accept_list.empty()){
+				socket->establish_list.push_back({new_socket->pid, fd});
+			}
+			else{
+				std::pair<int, struct sockaddr *> accept_pair = (socket->accept_list).back();
+				(socket->accept_list).pop_back();
+				memcpy(accept_pair.second, &(new_socket->peer_addr), sizeof(struct sockaddr));
+				returnSystemCall(accept_pair.first, fd);
+			}
+			//TODO: may contain payload?
+		}
+	}
+
+	// 4-way close
+	if(FIN){
+		//send ACK for FIN
+		//TODO: what abt pkt loss gap? (cumulative ack)???
+		payload_size = 0;
+		new_tcph_h.ack_flag = 1;
+		socket->ack_num = rcv_tcph_h.seq_num + 1;
+		new_tcph_h.ack_num = socket->ack_num;		
+		new_tcph_h.seq_num = socket->seq_num;
+			// do not increase : no FINACK's response
+
+		if(socket->state == TCPState::ESTABLISHED){
+			//passive close
+			socket->state = TCPState::CLOSE_WAIT;
+		}
+		if(socket->state == TCPState::FIN_WAIT_1){
+			//simultaneous close
+			socket->state = TCPState::CLOSING;
+		}
+		if(socket->state == TCPState::FIN_WAIT_2){
+			//TODO: go to time wait
+			//for now, remove socket
+			//socket->state = TCPState::TIME_WAIT;
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+		}
+	}
+	if(ACK){ // NOT "else if" : (FIN_WAIT_1-(CLOSING)->TIME_WAIT)
+		if(socket->state == TCPState::FIN_WAIT_1){
+			socket->state = TCPState::FIN_WAIT_2;
+		}
+		if(socket->state == TCPState::CLOSING){
+			//TODO: go to time wait
+			//for now, remove socket
+			//socket->state = TCPState::TIME_WAIT;
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+
+		}
+		if(socket->state == TCPState::LAST_ACK){
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+		}
+	}
+	
+	if(payload_size != -1){
+		//send packet
+		this->hton_ip_header(&new_iph_h, &new_iph_n);
+		this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
+		Packet * send_packet = this->allocatePacket(14+20+20+payload_size);
+		this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
+		if(payload_size > 0){
+			send_packet->writeData(14+20+20, payload_buf, payload_size);
+		}
+		this->set_common_tcp_fields(send_packet);
+		this->sendPacket("IPv4", send_packet);
+	}
+
 	this->freePacket(packet);
 }
 
@@ -626,6 +591,18 @@ void TCPAssignment::timerCallback(void* payload)
 }
 
 /* Helper Functions */
+
+
+bool TCPAssignment::confirm_syn_client(Socket* socket, int ip, short port, int sn, int an){
+	std::vector<struct syn_client>::iterator it;
+	for(it = socket->syn_clients.begin(); it != socket->syn_clients.end(); it++){
+		if(ip == it->ip && port == it->port && it->seq_num == sn, it->ack_num == an){
+			socket->syn_clients.erase(it);
+			return true;
+		}
+	}
+	return false;
+}
 
 
 /* 	
