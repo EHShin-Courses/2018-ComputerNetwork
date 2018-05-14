@@ -63,82 +63,6 @@ Socket::~Socket()
 	}
 }
 
-int Socket::send_buf_free_length(){
-	// |....[sb]DDDD[nw].....|
-	// |DDDD[nw]....[sb]DDDDD|
-	if(this->send_base == this->next_write){
-		return BUFFER_SIZE;
-	}
-	else{
-		return (this->send_base - this->next_write)%BUFFER_SIZE;
-	}
-}
-
-int Socket::recv_buf_data_length(){
-	// |....[rd]DDDD[rcv]....|
-	// |DDD[rcv]....[rd]DDDDD|
-	if(this->next_receive + (uint32_t)BUFFER_SIZE == this->next_write){
-		return BUFFER_SIZE;
-	}
-	else{
-		return (this->next_receive - this->next_read)%BUFFER_SIZE;
-	}
-}
-
-int Socket::send_buf_write(void * buf, uint32_t st, uint32_t ed){
-	// |....[sti]DDDD[edi].....|
-	// |DDDD[edi]....[sti]DDDDD|
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
-	if(st_idx < ed_idx){
-		memcpy(this->send_buffer, buf, ed_idx - st_idx + 1);
-	}
-	else{
-		memcpy(this->send_buffer, buf, BUFFER_SIZE - st_idx);
-		memcpy(this->send_buffer, buf, ed_idx + 1);
-	}
-	return ed-st;
-}
-
-int Socket::send_buf_read(void * buf, uint32_t st, uint32_t ed){
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
-	if(st_idx < ed_idx){
-		memcpy(buf, this->send_buffer, ed_idx - st_idx + 1);
-	}
-	else{
-		memcpy(buf, this->send_buffer, BUFFER_SIZE - st_idx);
-		memcpy(buf, this->send_buffer, ed_idx + 1);
-	}
-	return ed-st;	
-}
-
-int Socket::recv_buf_write(void * buf, uint32_t st, uint32_t ed){
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
-	if(st_idx < ed_idx){
-		memcpy(this->receive_buffer, buf, ed_idx - st_idx + 1);
-	}
-	else{
-		memcpy(this->receive_buffer, buf, BUFFER_SIZE - st_idx);
-		memcpy(this->receive_buffer, buf, ed_idx + 1);
-	}
-	return ed-st;
-}
-
-int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
-	if(st_idx < ed_idx){
-		memcpy(buf, this->receive_buffer, ed_idx - st_idx + 1);
-	}
-	else{
-		memcpy(buf, this->receive_buffer, BUFFER_SIZE - st_idx);
-		memcpy(buf, this->receive_buffer, ed_idx + 1);
-	}
-	return ed-st;	
-}
-
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int type__unused){
 	int fd = this->createFileDescriptor(pid);
 	if(fd == -1){ // fail
@@ -355,82 +279,44 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 
 }
 
-void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
-
-	struct ip_header iph_n = {0};
-	struct ip_header iph_h = {0};
-	struct tcp_header tcph_n = {0};
-	struct tcp_header tcph_h = {0};
-
-	iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
-	iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
-	tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
-	tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
-
-	tcph_h.seq_num = st;
-	tcph_h.ack_num = socket->next_receive;
-	tcph_h.ack_flag = 1;
-
-	this->hton_ip_header(&iph_h, &iph_n);
-	this->hton_tcp_header(&tcph_h, &tcph_n);
-
-	int payload_size = ed - st + 1;
-	void * buf = malloc(payload_size);
-	socket->send_buf_read(buf, st, ed);
-	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + payload_size);
-	send_packet->writeData(14 + 20 + 20, buf, payload_size);
-	this->set_common_tcp_fields(send_packet);
-	this->sendPacket("IPv4", send_packet);
-
-}
-
-void TCPAssignment::send_maximum(Socket * socket){
-
-	uint32_t st, ed;
-	int segment_size;
-	while(true){
-		if(socket->next_seq_num == socket->next_write){
-			//TODO:congestion control
-			break;
-		}
-		st = socket->next_seq_num;
-		segment_size = std::min({(int)(socket->next_write - st), MSS});
-		ed = st + segment_size - 1;
-		send_data_packet(socket, st, ed);
-		socket->sent_unACKed_segments.insert({st, ed});		
-	}
-
-}
-
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
 
+	size_t num_write;
+	uint32_t st, ed;
 	Socket *socket = tcp_context.at({pid, fd});
-	int count_left = count;
-	int num_to_send, st, ed;
-	bool return_right_now = true;
-	while(count_left != 0){
-		num_to_send = std::min({socket->send_buf_free_length(), MSS, count_left});
-		if(num_to_send == 0){
-			return_right_now = false;
-			break;
-		}
+	num_write = std::min({socket->send_buf_free_length(), (int)count});
+
+	if(num_write != 0){ // there is free buffer space
 		st = socket->next_write;
-		ed = socket->next_write + num_to_send - 1;
+		ed = socket->next_write + num_write - 1;
 		socket->send_buf_write(buf, st, ed);
-		socket->next_write += num_to_send;
-
+		socket->next_write += num_write;
 		send_maximum(socket);
-
-		count_left -= num_to_send;
+		returnSystemCall(syscallUUID, num_write);
 	}
-	if(return_right_now){
-		returnSystemCall(syscallUUID, count-count_left);
+
+	if(num_write == count){
+		returnSystemCall(syscallUUID, num_write);
 	}
 	else{
 		// block till there is free space in send buffer.
 		// expect user to call write() again to use that free space.
 		socket->syscallUUID = syscallUUID;
-		socket->return_num = count - count_left;
+		socket->return_num = num_write;		
+	}
+}
+
+void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
+	int ret = -1;
+	try{
+		Socket *socket = tcp_context.at({pid, sockfd});
+		memcpy(addr, &(socket->peer_addr), sizeof(struct sockaddr));
+		*addrlen = sizeof(struct sockaddr);
+		ret = 0;
+		returnSystemCall(syscallUUID, ret);		
+	}
+	catch(const std::out_of_range& oor){
+		returnSystemCall(syscallUUID, ret);
 	}
 }
 
@@ -499,6 +385,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 	// read packet
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
+
+	// TODO: checksum
+
 	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
 	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
 	bool SYN = (rcv_tcph_h.syn_flag == 1);
@@ -665,7 +554,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//socket->state = TCPState::TIME_WAIT;
 			this->removeFileDescriptor(socket->pid, socket->sockfd);
 			tcp_context.erase({socket->pid, socket->sockfd});
-
 		}
 		if(socket->state == TCPState::LAST_ACK){
 			this->removeFileDescriptor(socket->pid, socket->sockfd);
@@ -855,24 +743,130 @@ void TCPAssignment::set_sockaddr_family(struct sockaddr *addr){
 	((struct sockaddr_in *)addr)->sin_family = AF_INET;
 }
 
-void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int sockfd, struct sockaddr *addr, socklen_t *addrlen){
-	int ret = -1;
-	try{
-		Socket *socket = tcp_context.at({pid, sockfd});
-		memcpy(addr, &(socket->peer_addr), sizeof(struct sockaddr));
-		*addrlen = sizeof(struct sockaddr);
-		ret = 0;
-		returnSystemCall(syscallUUID, ret);		
+
+
+
+int Socket::send_buf_free_length(){
+	// |....[sb]DDDD[nw].....|
+	// |DDDD[nw]....[sb]DDDDD|
+	if(this->send_base == this->next_write){
+		return BUFFER_SIZE;
 	}
-	catch(const std::out_of_range& oor){
-		returnSystemCall(syscallUUID, ret);
+	else{
+		return (this->send_base - this->next_write)%BUFFER_SIZE;
 	}
-
-
-
-
 }
 
+int Socket::recv_buf_data_length(){
+	// |....[rd]DDDD[rcv]....|
+	// |DDD[rcv]....[rd]DDDDD|
+	if(this->next_receive + (uint32_t)BUFFER_SIZE == this->next_write){
+		return BUFFER_SIZE;
+	}
+	else{
+		return (this->next_receive - this->next_read)%BUFFER_SIZE;
+	}
+}
+
+int Socket::send_buf_write(void * buf, uint32_t st, uint32_t ed){
+	// |....[sti]DDDD[edi].....|
+	// |DDDD[edi]....[sti]DDDDD|
+	int st_idx = st%BUFFER_SIZE;
+	int ed_idx = ed%BUFFER_SIZE;
+	if(st_idx < ed_idx){
+		memcpy(this->send_buffer, buf, ed_idx - st_idx + 1);
+	}
+	else{
+		memcpy(this->send_buffer, buf, BUFFER_SIZE - st_idx);
+		memcpy(this->send_buffer, buf, ed_idx + 1);
+	}
+	return ed-st;
+}
+
+int Socket::send_buf_read(void * buf, uint32_t st, uint32_t ed){
+	int st_idx = st%BUFFER_SIZE;
+	int ed_idx = ed%BUFFER_SIZE;
+	if(st_idx < ed_idx){
+		memcpy(buf, this->send_buffer, ed_idx - st_idx + 1);
+	}
+	else{
+		memcpy(buf, this->send_buffer, BUFFER_SIZE - st_idx);
+		memcpy(buf, this->send_buffer, ed_idx + 1);
+	}
+	return ed-st;	
+}
+
+int Socket::recv_buf_write(void * buf, uint32_t st, uint32_t ed){
+	int st_idx = st%BUFFER_SIZE;
+	int ed_idx = ed%BUFFER_SIZE;
+	if(st_idx < ed_idx){
+		memcpy(this->receive_buffer, buf, ed_idx - st_idx + 1);
+	}
+	else{
+		memcpy(this->receive_buffer, buf, BUFFER_SIZE - st_idx);
+		memcpy(this->receive_buffer, buf, ed_idx + 1);
+	}
+	return ed-st;
+}
+
+int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
+	int st_idx = st%BUFFER_SIZE;
+	int ed_idx = ed%BUFFER_SIZE;
+	if(st_idx < ed_idx){
+		memcpy(buf, this->receive_buffer, ed_idx - st_idx + 1);
+	}
+	else{
+		memcpy(buf, this->receive_buffer, BUFFER_SIZE - st_idx);
+		memcpy(buf, this->receive_buffer, ed_idx + 1);
+	}
+	return ed-st;	
+}
+
+//send seq# st ~ seq# ed
+void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
+
+	struct ip_header iph_n = {0};
+	struct ip_header iph_h = {0};
+	struct tcp_header tcph_n = {0};
+	struct tcp_header tcph_h = {0};
+
+	iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
+	iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
+	tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
+	tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
+
+	tcph_h.seq_num = st;
+	tcph_h.ack_num = socket->next_receive;
+	tcph_h.ack_flag = 1;
+
+	this->hton_ip_header(&iph_h, &iph_n);
+	this->hton_tcp_header(&tcph_h, &tcph_n);
+
+	int payload_size = ed - st + 1;
+	void * buf = malloc(payload_size);
+	socket->send_buf_read(buf, st, ed);
+	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + payload_size);
+	send_packet->writeData(14 + 20 + 20, buf, payload_size);
+	this->set_common_tcp_fields(send_packet);
+	this->sendPacket("IPv4", send_packet);
+}
+
+//first transmission of maximum possible amount of data
+void TCPAssignment::send_maximum(Socket * socket){
+	uint32_t st, ed;
+	int segment_size;
+	while(true){
+		if(socket->next_seq_num == socket->next_write){
+			//TODO:congestion control
+			break;
+		}
+		st = socket->next_seq_num;
+		segment_size = std::min({(int)(socket->next_write - st), MSS});
+		ed = st + segment_size - 1;
+		send_data_packet(socket, st, ed);
+		socket->sent_unACKed_segments.insert({st, ed});		
+	}
+}
 
 
 }
