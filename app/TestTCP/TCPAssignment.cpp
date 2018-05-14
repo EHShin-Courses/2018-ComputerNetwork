@@ -276,7 +276,26 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd, struct
 
 void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
 	//Socket *socket = tcp_context.at({pid, fd});
+	size_t num_read;
+	uint32_t st, ed;
+	Socket *socket = tcp_context.at({pid, fd});
+	num_read = std::min({socket->recv_buf_data_length(), (int)count});
 
+	if(num_read != 0){
+		
+		st = socket->next_read;
+		ed = socket->next_read + num_read - 1;
+		socket->recv_buf_read(buf, st, ed);
+		socket->next_read += num_read;
+
+		returnSystemCall(syscallUUID, num_read);
+	}
+	else{
+		// block till there is data in receive buffer.
+		// expect user to call read() again to read that data.
+		socket->syscallUUID = syscallUUID;
+		socket->return_num = 0;
+	}
 }
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){

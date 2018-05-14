@@ -94,12 +94,12 @@ public:
 	uint32_t next_seq_num; // seq# of next byte to be sent (for the first time)
 	uint32_t send_base; // seq# of last cumulatively ACKed byte + 1
 	uint32_t next_write; // seq# of next byte to be written 
-	std::unordered_map<int ,int> sent_unACKed_segments;
+	std::unordered_map<uint32_t ,uint32_t> sent_unACKed_segments;
 	//(first seq#, last seq#) for each segment
 
-	int next_receive; // seq# of next byte to receive orderly
-	int next_read; // seq# of next byte to be read
-	std::unordered_map<int ,int> received_unordered_segments;
+	uint32_t next_receive; // seq# of next byte to receive orderly
+	uint32_t next_read; // seq# of next byte to be read
+	std::unordered_map<uint32_t ,uint32_t> received_unordered_segments;
 	//(first seq#, last seq#) for each segment
 
 
