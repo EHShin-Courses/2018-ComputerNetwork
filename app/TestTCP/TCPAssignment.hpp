@@ -45,7 +45,18 @@ enum class TCPState{
 
 // Socket : open socket's information
 class Socket{
+
 public:
+	int send_buf_free_length();
+	int recv_buf_data_length();
+
+	int send_buf_write(void * buf, uint32_t st, uint32_t ed);
+	int send_buf_read(void * buf, uint32_t st, uint32_t ed);
+	int recv_buf_write(void * buf, uint32_t st, uint32_t ed);
+	int recv_buf_read(void * buf, uint32_t st, uint32_t ed);
+
+
+
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
@@ -70,25 +81,33 @@ public:
 	int DevRTT;
 	int TimeoutInterval;
 
-	uint8_t *send_buffer;
-	int next_seq_num; // buffer idx of next byte to be sent
-	int send_base; // buffer idx of last cumulatively ACKed byte + 1
-	int next_write; // buffer idx of next byte to be written 
-	std::unordered_map<int ,std::pair<int, int>> sent_unACKed_segments; // (seq, (first index, last index)) for each segment
-
-	// Newly Added
-	int send_base_seq_num;
+	int send_base_seq_num;	
 	int return_num;
 
+	uint8_t *send_buffer;
 	uint8_t *receive_buffer;
-	int next_receive; // buffer idx of next byte to receive orderly
-	int next_read; // buffer idx of next byte to be read
-	std::unordered_map<int ,std::pair<int, int>> received_unordered_segments; // (seq, (first index, last index)) for each segment
+
+
+
+	//NOW THESE ARE ALL SEQ#s (32bit)
+
+	uint32_t next_seq_num; // seq# of next byte to be sent (for the first time)
+	uint32_t send_base; // seq# of last cumulatively ACKed byte + 1
+	uint32_t next_write; // seq# of next byte to be written 
+	std::unordered_map<int ,int> sent_unACKed_segments;
+	//(first seq#, last seq#) for each segment
+
+	int next_receive; // seq# of next byte to receive orderly
+	int next_read; // seq# of next byte to be read
+	std::unordered_map<int ,int> received_unordered_segments;
+	//(first seq#, last seq#) for each segment
 
 
 public:
 	Socket(int pid, int fd, TCPState state);
 	virtual ~Socket();
+
+	static const int BUFFER_SIZE = 51200;
 };
 
 
@@ -144,7 +163,14 @@ private:
 
 	//PJ2 : new port number
 	int current_port_number;
-	int INITIAL_RWND;
+
+	//PJ3 : constants
+
+	const int MSS = 512;
+
+	//better place helpers here...
+	void send_data_packet(Socket* socket, uint32_t st, uint32_t ed);
+	void send_maximum(Socket * socket);
 
 	virtual void timerCallback(void* payload) final;
 
