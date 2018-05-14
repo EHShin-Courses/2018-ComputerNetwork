@@ -53,6 +53,8 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->addrlen = sizeof(struct sockaddr);
 	this->send_buffer = NULL;
 	this->receive_buffer = NULL;
+	this->blocked_for_write = false;
+	this->blocked_for_read = false;
 }
 
 Socket::~Socket()
@@ -282,7 +284,6 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 	num_read = std::min({socket->recv_buf_data_length(), (int)count});
 
 	if(num_read != 0){
-		
 		st = socket->next_read;
 		ed = socket->next_read + num_read - 1;
 		socket->recv_buf_read(buf, st, ed);
@@ -311,7 +312,6 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 		socket->send_buf_write(buf, st, ed);
 		socket->next_write += num_write;
 		send_maximum(socket);
-		returnSystemCall(syscallUUID, num_write);
 	}
 
 	if(num_write == count){
@@ -399,8 +399,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	struct ip_header new_iph_h = {0};
 	struct tcp_header new_tcph_n = {0};
 	struct tcp_header new_tcph_h = {0};
-	int payload_size = -1; // -1: no send
-	uint8_t* payload_buf = NULL;
+	int new_payload_size = -1; // -1: no send
+	uint8_t* new_payload_buf = NULL;
+	int rcv_payload_size = packet->getSize() - (14+20+20);
+	uint8_t* rcv_payload_buf = NULL;
 
 	// read packet
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
@@ -431,6 +433,48 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	new_iph_h.source_ip = rcv_iph_h.dest_ip;
 	new_iph_h.dest_ip = rcv_iph_h.source_ip;
 
+
+
+	// DATA TRANSFER
+	if(rcv_payload_size > 0){
+		//check window
+		bool in_order = socket->next_receive == (uint32_t)rcv_tcph_h.seq_num;
+		bool duplicate = false;
+		bool out_of_order = false;
+		if(in_order){
+
+			//write to buffer if possible (must not write segment partially)
+
+			bool wrote = false;
+			if(wrote && socket->blocked_for_read){
+				//wake read()
+				this->returnSystemCall(socket->syscallUUID, socket->return_num);
+			}
+			//send ACK <- TODO: or wait?
+		}
+		else if(duplicate){
+			//send ACK (again)
+		}
+		else if(out_of_order){
+			//write to buffer if possible (must not write segment partially)
+			//send (dup) ACK
+		}
+
+	}
+	if(ACK){
+		if(socket->state == TCPState::ESTABLISHED || socket->state == TCPState::CLOSE_WAIT){
+			//check window, duplicate acks etc
+			//socket->send_base = rcv_tcph_h.ack_num;
+			if(socket->blocked_for_write){
+				//wake write()
+				this->returnSystemCall(socket->syscallUUID, socket->return_num);
+			}
+			send_maximum(socket);
+		}
+	}
+
+
+
 	// 3-way handshaking
 	if(SYN && !ACK && socket->state == TCPState::LISTEN){
 		//server received SYN
@@ -445,7 +489,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				0
 			};
 			//set SYNACK fields
-			payload_size = 0;
+			new_payload_size = 0;
 			new_tcph_h.syn_flag = 1;
 			new_tcph_h.ack_flag = 1;
 			new_tcph_h.ack_num = new_sc.ack_num;
@@ -461,7 +505,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		//client recieved SYNACK
 		if(socket->seq_num == rcv_tcph_h.ack_num){
 			//set ACK fields
-			payload_size = 0;
+			new_payload_size = 0;
 			new_tcph_h.ack_flag = 1;
 			socket->ack_num = rcv_tcph_h.seq_num + 1;
 			new_tcph_h.ack_num = socket->ack_num;
@@ -530,7 +574,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		//TODO: replace seq_num, ack_num with congestion control seq# variables
 		//send ACK for FIN
 		//TODO: what abt pkt loss gap? (cumulative ack)???
-		payload_size = 0;
+		new_payload_size = 0;
 		new_tcph_h.ack_flag = 1;
 		socket->ack_num = rcv_tcph_h.seq_num + 1;
 		new_tcph_h.ack_num = socket->ack_num;		
@@ -554,16 +598,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		}
 	}
 	if(ACK){ // NOT "else if" : (FIN_WAIT_1-(CLOSING)->TIME_WAIT)
-
-		// added : ESTABLISHED - data transfering state
-		if(socket->state == TCPState::ESTABLISHED){
-			if(packet->getSize() == 0){ // client receiving ACK of data 
-				socket->send_base += (rcv_tcph_h.ack_num - socket->send_base_seq_num);
-				socket->send_base_seq_num = rcv_tcph_h.ack_num;
-			}
-		}
-
-
 		if(socket->state == TCPState::FIN_WAIT_1){
 			socket->state = TCPState::FIN_WAIT_2;
 		}
@@ -579,15 +613,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			tcp_context.erase({socket->pid, socket->sockfd});
 		}
 	}
-	
-	if(payload_size != -1){
+
+
+	if(new_payload_size != -1){
 		//send packet
 		this->hton_ip_header(&new_iph_h, &new_iph_n);
 		this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
-		Packet * send_packet = this->allocatePacket(14+20+20+payload_size);
+		Packet * send_packet = this->allocatePacket(14+20+20+new_payload_size);
 		this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
-		if(payload_size > 0){
-			send_packet->writeData(14+20+20, payload_buf, payload_size);
+		if(new_payload_size > 0){
+			send_packet->writeData(14+20+20, new_payload_buf, new_payload_size);
 		}
 		this->set_common_tcp_fields(send_packet);
 		this->sendPacket("IPv4", send_packet);
@@ -861,11 +896,11 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
 
-	int payload_size = ed - st + 1;
-	void * buf = malloc(payload_size);
+	int new_payload_size = ed - st + 1;
+	void * buf = malloc(new_payload_size);
 	socket->send_buf_read(buf, st, ed);
-	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + payload_size);
-	send_packet->writeData(14 + 20 + 20, buf, payload_size);
+	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + new_payload_size);
+	send_packet->writeData(14 + 20 + 20, buf, new_payload_size);
 	this->set_common_tcp_fields(send_packet);
 	this->sendPacket("IPv4", send_packet);
 }

@@ -87,10 +87,7 @@ public:
 	uint8_t *send_buffer;
 	uint8_t *receive_buffer;
 
-
-
 	//NOW THESE ARE ALL SEQ#s (32bit)
-
 	uint32_t next_seq_num; // seq# of next byte to be sent (for the first time)
 	uint32_t send_base; // seq# of last cumulatively ACKed byte + 1
 	uint32_t next_write; // seq# of next byte to be written 
@@ -101,6 +98,9 @@ public:
 	uint32_t next_read; // seq# of next byte to be read
 	std::unordered_map<uint32_t ,uint32_t> received_unordered_segments;
 	//(first seq#, last seq#) for each segment
+
+	bool blocked_for_write;
+	bool blocked_for_read;
 
 
 public:
