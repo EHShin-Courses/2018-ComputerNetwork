@@ -170,6 +170,8 @@ private:
 	//better place helpers here...
 	void send_data_packet(Socket* socket, uint32_t st, uint32_t ed);
 	int send_maximum(Socket * socket);
+	void send_ACK(Socket * socket);
+
 
 	virtual void timerCallback(void* payload) final;
 
