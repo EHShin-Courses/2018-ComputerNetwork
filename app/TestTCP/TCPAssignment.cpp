@@ -301,27 +301,31 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, size_t count){
 
+	fflush(0);
 	size_t num_write;
 	uint32_t st, ed;
 	Socket *socket = tcp_context.at({pid, fd});
 	num_write = std::min({socket->send_buf_free_length(), (int)count});
 
+	int sent_num;
+	printf("write\n");
 	if(num_write != 0){ // there is free buffer space
+		printf("next write : %d\n",socket->next_write);
 		st = socket->next_write;
 		ed = socket->next_write + num_write - 1;
 		socket->send_buf_write(buf, st, ed);
 		socket->next_write += num_write;
-		send_maximum(socket);
+		sent_num = send_maximum(socket);
 	}
 
-	if(num_write == count){
-		returnSystemCall(syscallUUID, num_write);
+	if(socket->send_buf_free_length() != 0){
+		returnSystemCall(syscallUUID, sent_num);
 	}
 	else{
 		// block till there is free space in send buffer.
 		// expect user to call write() again to use that free space.
 		socket->syscallUUID = syscallUUID;
-		socket->return_num = num_write;		
+		socket->return_num = sent_num;		
 	}
 }
 
@@ -513,10 +517,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 			//set Socket fields
 			socket->state = TCPState::ESTABLISHED;
-			socket->next_seq_num = 0;
-			socket->send_base = 0;
-			socket->next_write = 0;
-			socket->send_base_seq_num = rcv_tcph_h.ack_num;
+			socket->next_seq_num = rcv_tcph_h.ack_num;
+			socket->send_base = rcv_tcph_h.ack_num;
+			socket->next_write = rcv_tcph_h.ack_num;
+			socket->next_receive = rcv_tcph_h.seq_num;
 
 			//return from connect()
 			this->returnSystemCall(socket->syscallUUID, 0);
@@ -825,40 +829,40 @@ int Socket::recv_buf_data_length(){
 int Socket::send_buf_write(void * buf, uint32_t st, uint32_t ed){
 	// |....[sti]DDDD[edi].....|
 	// |DDDD[edi]....[sti]DDDDD|
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
+	int st_idx = (st + BUFFER_SIZE) % BUFFER_SIZE;
+	int ed_idx = (ed + BUFFER_SIZE) % BUFFER_SIZE;
 	if(st_idx < ed_idx){
-		memcpy(this->send_buffer, buf, ed_idx - st_idx + 1);
+		memcpy(this->send_buffer + st_idx, buf, ed_idx - st_idx + 1);
 	}
 	else{
-		memcpy(this->send_buffer, buf, BUFFER_SIZE - st_idx);
-		memcpy(this->send_buffer, buf, ed_idx + 1);
+		memcpy(this->send_buffer + st_idx, buf, BUFFER_SIZE - st_idx);
+		memcpy(this->send_buffer, buf + BUFFER_SIZE - st_idx, ed_idx + 1);
 	}
 	return ed-st;
 }
 
 int Socket::send_buf_read(void * buf, uint32_t st, uint32_t ed){
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
+	int st_idx = (st + BUFFER_SIZE) % BUFFER_SIZE;
+	int ed_idx = (ed + BUFFER_SIZE) % BUFFER_SIZE;
 	if(st_idx < ed_idx){
-		memcpy(buf, this->send_buffer, ed_idx - st_idx + 1);
+		memcpy(buf, this->send_buffer + st_idx, ed_idx - st_idx + 1);
 	}
 	else{
-		memcpy(buf, this->send_buffer, BUFFER_SIZE - st_idx);
-		memcpy(buf, this->send_buffer, ed_idx + 1);
+		memcpy(buf, this->send_buffer + st_idx, BUFFER_SIZE - st_idx);
+		memcpy(buf + BUFFER_SIZE - st_idx, this->send_buffer, ed_idx + 1);
 	}
 	return ed-st;	
 }
 
 int Socket::recv_buf_write(void * buf, uint32_t st, uint32_t ed){
-	int st_idx = st%BUFFER_SIZE;
-	int ed_idx = ed%BUFFER_SIZE;
+	int st_idx = (st + BUFFER_SIZE) % BUFFER_SIZE;
+	int ed_idx = (ed + BUFFER_SIZE) % BUFFER_SIZE;
 	if(st_idx < ed_idx){
-		memcpy(this->receive_buffer, buf, ed_idx - st_idx + 1);
+		memcpy(this->receive_buffer + st_idx, buf, ed_idx - st_idx + 1);
 	}
 	else{
-		memcpy(this->receive_buffer, buf, BUFFER_SIZE - st_idx);
-		memcpy(this->receive_buffer, buf, ed_idx + 1);
+		memcpy(this->receive_buffer + st_idx, buf, BUFFER_SIZE - st_idx);
+		memcpy(this->receive_buffer, buf + BUFFER_SIZE - st_idx, ed_idx + 1);
 	}
 	return ed-st;
 }
@@ -867,11 +871,11 @@ int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
 	int st_idx = st%BUFFER_SIZE;
 	int ed_idx = ed%BUFFER_SIZE;
 	if(st_idx < ed_idx){
-		memcpy(buf, this->receive_buffer, ed_idx - st_idx + 1);
+		memcpy(buf, this->receive_buffer + st_idx, ed_idx - st_idx + 1);
 	}
 	else{
-		memcpy(buf, this->receive_buffer, BUFFER_SIZE - st_idx);
-		memcpy(buf, this->receive_buffer, ed_idx + 1);
+		memcpy(buf, this->receive_buffer + st_idx, BUFFER_SIZE - st_idx);
+		memcpy(buf + BUFFER_SIZE - st_idx, this->receive_buffer, ed_idx + 1);
 	}
 	return ed-st;	
 }
@@ -900,25 +904,32 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	void * buf = malloc(new_payload_size);
 	socket->send_buf_read(buf, st, ed);
 	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + new_payload_size);
+	this->write_headers(send_packet, &iph_n, &tcph_n);
 	send_packet->writeData(14 + 20 + 20, buf, new_payload_size);
 	this->set_common_tcp_fields(send_packet);
 	this->sendPacket("IPv4", send_packet);
+	free(buf);
 }
 
 //first transmission of maximum possible amount of data
-void TCPAssignment::send_maximum(Socket * socket){
+int TCPAssignment::send_maximum(Socket * socket){
 	uint32_t st, ed;
 	int segment_size;
+
+	int ret = 0;
 	while(true){
 		if(socket->next_seq_num == socket->next_write){
 			//TODO:congestion control
-			break;
+			return ret;
 		}
+		fflush(0);
 		st = socket->next_seq_num;
 		segment_size = std::min({(int)(socket->next_write - st), MSS});
 		ed = st + segment_size - 1;
 		send_data_packet(socket, st, ed);
+		socket->next_seq_num += segment_size;
 		socket->sent_unACKed_segments.insert({st, ed});		
+		ret += segment_size;
 	}
 }
 

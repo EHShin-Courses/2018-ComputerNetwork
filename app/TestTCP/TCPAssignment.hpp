@@ -81,7 +81,6 @@ public:
 	int DevRTT;
 	int TimeoutInterval;
 
-	int send_base_seq_num;	
 	int return_num;
 
 	uint8_t *send_buffer;
@@ -170,7 +169,7 @@ private:
 
 	//better place helpers here...
 	void send_data_packet(Socket* socket, uint32_t st, uint32_t ed);
-	void send_maximum(Socket * socket);
+	int send_maximum(Socket * socket);
 
 	virtual void timerCallback(void* payload) final;
 
