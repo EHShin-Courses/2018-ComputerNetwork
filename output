@@ -2,7 +2,13 @@ make[1]: Entering directory '/home/cs341/Desktop/KENS2018/src'
 make[1]: Nothing to be done for 'all'.
 make[1]: Leaving directory '/home/cs341/Desktop/KENS2018/src'
 make[1]: Entering directory '/home/cs341/Desktop/KENS2018/app/TestTCP'
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testopen.o testopen.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testcongestion.o testcongestion.cpp
 g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o TCPAssignment.o TCPAssignment.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testtransfer.o testtransfer.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testbind.o testbind.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testhandshake.o testhandshake.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o testclose.o testclose.cpp
 g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include  testopen.o testcongestion.o TCPAssignment.o testtransfer.o testbind.o testhandshake.o testclose.o   ../../solution/E_TCPSolution_linux_amd64.o -o ../../build/testTCP -L../../lib -le -pthread -lgtest -lgtest_main
 make[1]: Leaving directory '/home/cs341/Desktop/KENS2018/app/TestTCP'
 Running test cases for project1...
@@ -12,25 +18,25 @@ Note: Google Test filter = TestEnv_Reliable.TestOpen:TestEnv_Reliable.TestBind_*
 [----------] Global test environment set-up.
 [----------] 8 tests from TestEnv_Reliable
 [ RUN      ] TestEnv_Reliable.TestOpen
-[       OK ] TestEnv_Reliable.TestOpen (5655 ms)
+[       OK ] TestEnv_Reliable.TestOpen (4818 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_Simple
 [       OK ] TestEnv_Reliable.TestBind_Simple (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_DoubleBind
 [       OK ] TestEnv_Reliable.TestBind_DoubleBind (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_GetSockName
-[       OK ] TestEnv_Reliable.TestBind_GetSockName (1 ms)
+[       OK ] TestEnv_Reliable.TestBind_GetSockName (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_OverlapPort
-[       OK ] TestEnv_Reliable.TestBind_OverlapPort (0 ms)
+[       OK ] TestEnv_Reliable.TestBind_OverlapPort (1 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_OverlapClosed
 [       OK ] TestEnv_Reliable.TestBind_OverlapClosed (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_DifferentIP_SamePort
-[       OK ] TestEnv_Reliable.TestBind_DifferentIP_SamePort (0 ms)
+[       OK ] TestEnv_Reliable.TestBind_DifferentIP_SamePort (1 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_SameIP_DifferentPort
 [       OK ] TestEnv_Reliable.TestBind_SameIP_DifferentPort (0 ms)
-[----------] 8 tests from TestEnv_Reliable (5658 ms total)
+[----------] 8 tests from TestEnv_Reliable (4821 ms total)
 
 [----------] Global test environment tear-down
-[==========] 8 tests from 1 test case ran. (5658 ms total)
+[==========] 8 tests from 1 test case ran. (4821 ms total)
 [  PASSED  ] 8 tests.
 Running test cases for project2...
 Running main() from gtest_main.cc
@@ -39,24 +45,24 @@ Note: Google Test filter = TestEnv_Reliable.TestAccept_*:TestEnv_Any.TestAccept_
 [----------] Global test environment set-up.
 [----------] 2 tests from TestEnv_Reliable
 [ RUN      ] TestEnv_Reliable.TestAccept_Backlog1
-[       OK ] TestEnv_Reliable.TestAccept_Backlog1 (62 ms)
+[       OK ] TestEnv_Reliable.TestAccept_Backlog1 (58 ms)
 [ RUN      ] TestEnv_Reliable.TestAccept_Backlog2
 [       OK ] TestEnv_Reliable.TestAccept_Backlog2 (3 ms)
-[----------] 2 tests from TestEnv_Reliable (65 ms total)
+[----------] 2 tests from TestEnv_Reliable (61 ms total)
 
 [----------] 13 tests from TestEnv_Any
 [ RUN      ] TestEnv_Any.TestAccept_BeforeAccept
-[       OK ] TestEnv_Any.TestAccept_BeforeAccept (2 ms)
+[       OK ] TestEnv_Any.TestAccept_BeforeAccept (1 ms)
 [ RUN      ] TestEnv_Any.TestAccept_AfterAccept
 [       OK ] TestEnv_Any.TestAccept_AfterAccept (1 ms)
 [ RUN      ] TestEnv_Any.TestAccept_MultipleInterface1
-[       OK ] TestEnv_Any.TestAccept_MultipleInterface1 (5 ms)
+[       OK ] TestEnv_Any.TestAccept_MultipleInterface1 (4 ms)
 [ RUN      ] TestEnv_Any.TestAccept_MultipleInterface2
 [       OK ] TestEnv_Any.TestAccept_MultipleInterface2 (4 ms)
 [ RUN      ] TestEnv_Any.TestConnect_BeforeAccept
 [       OK ] TestEnv_Any.TestConnect_BeforeAccept (1 ms)
 [ RUN      ] TestEnv_Any.TestConnect_AfterAccept
-[       OK ] TestEnv_Any.TestConnect_AfterAccept (2 ms)
+[       OK ] TestEnv_Any.TestConnect_AfterAccept (1 ms)
 [ RUN      ] TestEnv_Any.TestConnect_SimultaneousConnect
 [       OK ] TestEnv_Any.TestConnect_SimultaneousConnect (1 ms)
 [ RUN      ] TestEnv_Any.TestClose_Connect_CloseFirst
@@ -71,10 +77,10 @@ Note: Google Test filter = TestEnv_Reliable.TestAccept_*:TestEnv_Any.TestAccept_
 [       OK ] TestEnv_Any.TestClose_Accept_CloseFirst (1 ms)
 [ RUN      ] TestEnv_Any.TestClose_Accept_CloseSimultaneous
 [       OK ] TestEnv_Any.TestClose_Accept_CloseSimultaneous (1 ms)
-[----------] 13 tests from TestEnv_Any (23 ms total)
+[----------] 13 tests from TestEnv_Any (22 ms total)
 
 [----------] Global test environment tear-down
-[==========] 15 tests from 2 test cases ran. (89 ms total)
+[==========] 15 tests from 2 test cases ran. (83 ms total)
 [  PASSED  ] 15 tests.
 Running test cases for project3...
 Running main() from gtest_main.cc
@@ -85,12 +91,24 @@ Note: Google Test filter = TestEnv_Any.TestTransfer_*
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Send_Symmetric
 write
 next write : -3069
+1024
+base, next_write : -3069 -2045
+A
 write
 next write : -2045
+1024
+base, next_write : -3069 -1021
+A
 write
 next write : -1021
+1024
+base, next_write : -3069 3
+A
 write
 next write : 3
+1024
+base, next_write : -3069 1027
+B
 testtransfer.cpp:277: Failure
 Value of: total_size
   Actual: 3072
@@ -101,16 +119,28 @@ Value of: total_size
   Actual: 4096
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_Symmetric (15 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_Symmetric (2 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Send_EOF
 write
 next write : -3069
+1024
+base, next_write : -3069 -2045
+A
 write
 next write : -2045
+1024
+base, next_write : -3069 -1021
+A
 write
 next write : -1021
+1024
+base, next_write : -3069 3
+A
 write
 next write : 3
+1024
+base, next_write : -3069 1027
+B
 testtransfer.cpp:277: Failure
 Value of: total_size
   Actual: 3072
@@ -121,7 +151,7 @@ Value of: total_size
   Actual: 4096
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_EOF (2 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_EOF (7 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -14373,7 +14403,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric (779 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric (686 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_EOF
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -25250,7 +25280,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_EOF (611 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_EOF (541 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -31757,7 +31787,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1 (596 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1 (565 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -35554,18 +35584,33 @@ Value of: total_size
   Actual: 53
 Expected: expect_size
 Which is: 64819
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2 (462 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2 (520 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Accept_Send_Symmetric
 write
 next write : 48
+1024
+base, next_write : 0 1072
+A
 write
 next write : 1072
+416
+base, next_write : 0 1488
+A
 write
 next write : 1488
+1024
+base, next_write : 0 2512
+A
 write
 next write : 2512
+1024
+base, next_write : 0 3536
+A
 write
 next write : 3536
+560
+base, next_write : 0 4096
+B
 testtransfer.cpp:161: Failure
 Value of: total_size
   Actual: 3072
@@ -35578,8 +35623,3 @@ Expected: expect_size
 Which is: 131072
 [  FAILED  ] TestEnv_Any.TestTransfer_Accept_Send_Symmetric (3 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Accept_Send_EOF
-write
-next write : 109488315
-testtransfer.cpp:122: Failure
-Expected: (remaining) >= (0), actual: -109488315 vs 0
-Makefile:46: recipe for target 'test_part3' failed

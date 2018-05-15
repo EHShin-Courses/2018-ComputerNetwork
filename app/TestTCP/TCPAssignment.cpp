@@ -315,13 +315,17 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 		ed = socket->next_write + num_write - 1;
 		socket->send_buf_write(buf, st, ed);
 		socket->next_write += num_write;
+		printf("%d\n",num_write);
 		sent_num = send_maximum(socket);
 	}
 
+	printf("base, next_write : %d %d\n", socket->send_base, socket->next_write);
 	if(socket->send_buf_free_length() != 0){
+		printf("A\n");
 		returnSystemCall(syscallUUID, sent_num);
 	}
 	else{
+		printf("B\n");
 		// block till there is free space in send buffer.
 		// expect user to call write() again to use that free space.
 		socket->syscallUUID = syscallUUID;
@@ -922,7 +926,6 @@ int TCPAssignment::send_maximum(Socket * socket){
 			//TODO:congestion control
 			return ret;
 		}
-		fflush(0);
 		st = socket->next_seq_num;
 		segment_size = std::min({(int)(socket->next_write - st), MSS});
 		ed = st + segment_size - 1;

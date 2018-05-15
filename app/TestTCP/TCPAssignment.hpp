@@ -106,7 +106,7 @@ public:
 	Socket(int pid, int fd, TCPState state);
 	virtual ~Socket();
 
-	static const int BUFFER_SIZE = 51200;
+	static const uint32_t BUFFER_SIZE = 51200;
 };
 
 
