@@ -228,7 +228,6 @@ protected:
 		{
 			for(int k=0; k<buffer_size; k++)
 				send_buffer[k] = rand_r(&seed) & 0xFF;
-
 			if(is_send)
 			{
 				int remaining = buffer_size;
@@ -250,6 +249,7 @@ protected:
 				int read_byte = 0;
 				while((read_byte = read(client_socket, recv_buffer + (buffer_size - remaining), remaining)) >= 0)
 				{
+					fflush(0);
 					total_size += read_byte;
 					remaining -= read_byte;
 					EXPECT_GE(remaining, 0);
