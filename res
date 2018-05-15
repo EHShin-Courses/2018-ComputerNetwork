@@ -2,7 +2,8 @@ make[1]: Entering directory '/home/eunhyouk/Documents/KENS2018/src'
 make[1]: Nothing to be done for 'all'.
 make[1]: Leaving directory '/home/eunhyouk/Documents/KENS2018/src'
 make[1]: Entering directory '/home/eunhyouk/Documents/KENS2018/app/TestTCP'
-make[1]: Nothing to be done for 'all'.
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include   -c -o TCPAssignment.o TCPAssignment.cpp
+g++ -std=c++11 -g -O0 -Wall -std=gnu++11 -I../../include  testopen.o testclose.o testcongestion.o TCPAssignment.o testbind.o testhandshake.o testtransfer.o   ../../solution/E_TCPSolution_linux_amd64.o -o ../../build/testTCP -L../../lib -le -pthread -lgtest -lgtest_main
 make[1]: Leaving directory '/home/eunhyouk/Documents/KENS2018/app/TestTCP'
 Running test cases for project1...
 Running main() from gtest_main.cc
@@ -11,25 +12,25 @@ Note: Google Test filter = TestEnv_Reliable.TestOpen:TestEnv_Reliable.TestBind_*
 [----------] Global test environment set-up.
 [----------] 8 tests from TestEnv_Reliable
 [ RUN      ] TestEnv_Reliable.TestOpen
-[       OK ] TestEnv_Reliable.TestOpen (5167 ms)
+[       OK ] TestEnv_Reliable.TestOpen (4864 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_Simple
 [       OK ] TestEnv_Reliable.TestBind_Simple (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_DoubleBind
 [       OK ] TestEnv_Reliable.TestBind_DoubleBind (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_GetSockName
-[       OK ] TestEnv_Reliable.TestBind_GetSockName (0 ms)
+[       OK ] TestEnv_Reliable.TestBind_GetSockName (1 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_OverlapPort
 [       OK ] TestEnv_Reliable.TestBind_OverlapPort (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_OverlapClosed
-[       OK ] TestEnv_Reliable.TestBind_OverlapClosed (1 ms)
+[       OK ] TestEnv_Reliable.TestBind_OverlapClosed (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_DifferentIP_SamePort
 [       OK ] TestEnv_Reliable.TestBind_DifferentIP_SamePort (0 ms)
 [ RUN      ] TestEnv_Reliable.TestBind_SameIP_DifferentPort
-[       OK ] TestEnv_Reliable.TestBind_SameIP_DifferentPort (0 ms)
-[----------] 8 tests from TestEnv_Reliable (5168 ms total)
+[       OK ] TestEnv_Reliable.TestBind_SameIP_DifferentPort (1 ms)
+[----------] 8 tests from TestEnv_Reliable (4866 ms total)
 
 [----------] Global test environment tear-down
-[==========] 8 tests from 1 test case ran. (5168 ms total)
+[==========] 8 tests from 1 test case ran. (4866 ms total)
 [  PASSED  ] 8 tests.
 Running test cases for project2...
 Running main() from gtest_main.cc
@@ -38,10 +39,10 @@ Note: Google Test filter = TestEnv_Reliable.TestAccept_*:TestEnv_Any.TestAccept_
 [----------] Global test environment set-up.
 [----------] 2 tests from TestEnv_Reliable
 [ RUN      ] TestEnv_Reliable.TestAccept_Backlog1
-[       OK ] TestEnv_Reliable.TestAccept_Backlog1 (53 ms)
+[       OK ] TestEnv_Reliable.TestAccept_Backlog1 (49 ms)
 [ RUN      ] TestEnv_Reliable.TestAccept_Backlog2
 [       OK ] TestEnv_Reliable.TestAccept_Backlog2 (3 ms)
-[----------] 2 tests from TestEnv_Reliable (56 ms total)
+[----------] 2 tests from TestEnv_Reliable (52 ms total)
 
 [----------] 13 tests from TestEnv_Any
 [ RUN      ] TestEnv_Any.TestClose_Connect_CloseFirst
@@ -73,7 +74,7 @@ Note: Google Test filter = TestEnv_Reliable.TestAccept_*:TestEnv_Any.TestAccept_
 [----------] 13 tests from TestEnv_Any (17 ms total)
 
 [----------] Global test environment tear-down
-[==========] 15 tests from 2 test cases ran. (73 ms total)
+[==========] 15 tests from 2 test cases ran. (69 ms total)
 [  PASSED  ] 15 tests.
 Running test cases for project3...
 Running main() from gtest_main.cc
@@ -85,301 +86,301 @@ Note: Google Test filter = TestEnv_Any.TestTransfer_*
 write
 freebuflen:51200
 next write : 4294964227
-1024
+st_idx:48131, st:42949642271024
 base, next_write : 4294964227 4294965251
 A
 write
 freebuflen:50176
 next write : 4294965251
-1024
+st_idx:49155, st:42949652511024
 base, next_write : 4294964227 4294966275
 A
 write
 freebuflen:49152
 next write : 4294966275
-1024
+st_idx:50179, st:42949662751024
 base, next_write : 4294964227 3
 A
 write
 freebuflen:48128
 next write : 3
-1024
+st_idx:3, st:31024
 base, next_write : 4294964227 1027
 A
 write
 freebuflen:47104
 next write : 1027
-1024
+st_idx:1027, st:10271024
 base, next_write : 4294964227 2051
 A
 write
 freebuflen:46080
 next write : 2051
-1024
+st_idx:2051, st:20511024
 base, next_write : 4294964227 3075
 A
 write
 freebuflen:45056
 next write : 3075
-1024
+st_idx:3075, st:30751024
 base, next_write : 4294964227 4099
 A
 write
 freebuflen:44032
 next write : 4099
-1024
+st_idx:4099, st:40991024
 base, next_write : 4294964227 5123
 A
 write
 freebuflen:43008
 next write : 5123
-1024
+st_idx:5123, st:51231024
 base, next_write : 4294964227 6147
 A
 write
 freebuflen:41984
 next write : 6147
-1024
+st_idx:6147, st:61471024
 base, next_write : 4294964227 7171
 A
 write
 freebuflen:40960
 next write : 7171
-1024
+st_idx:7171, st:71711024
 base, next_write : 4294964227 8195
 A
 write
 freebuflen:39936
 next write : 8195
-1024
+st_idx:8195, st:81951024
 base, next_write : 4294964227 9219
 A
 write
 freebuflen:38912
 next write : 9219
-1024
+st_idx:9219, st:92191024
 base, next_write : 4294964227 10243
 A
 write
 freebuflen:37888
 next write : 10243
-1024
+st_idx:10243, st:102431024
 base, next_write : 4294964227 11267
 A
 write
 freebuflen:36864
 next write : 11267
-1024
+st_idx:11267, st:112671024
 base, next_write : 4294964227 12291
 A
 write
 freebuflen:35840
 next write : 12291
-1024
+st_idx:12291, st:122911024
 base, next_write : 4294964227 13315
 A
 write
 freebuflen:34816
 next write : 13315
-1024
+st_idx:13315, st:133151024
 base, next_write : 4294964227 14339
 A
 write
 freebuflen:33792
 next write : 14339
-1024
+st_idx:14339, st:143391024
 base, next_write : 4294964227 15363
 A
 write
 freebuflen:32768
 next write : 15363
-1024
+st_idx:15363, st:153631024
 base, next_write : 4294964227 16387
 A
 write
 freebuflen:31744
 next write : 16387
-1024
+st_idx:16387, st:163871024
 base, next_write : 4294964227 17411
 A
 write
 freebuflen:30720
 next write : 17411
-1024
+st_idx:17411, st:174111024
 base, next_write : 4294964227 18435
 A
 write
 freebuflen:29696
 next write : 18435
-1024
+st_idx:18435, st:184351024
 base, next_write : 4294964227 19459
 A
 write
 freebuflen:28672
 next write : 19459
-1024
+st_idx:19459, st:194591024
 base, next_write : 4294964227 20483
 A
 write
 freebuflen:27648
 next write : 20483
-1024
+st_idx:20483, st:204831024
 base, next_write : 4294964227 21507
 A
 write
 freebuflen:26624
 next write : 21507
-1024
+st_idx:21507, st:215071024
 base, next_write : 4294964227 22531
 A
 write
 freebuflen:25600
 next write : 22531
-1024
+st_idx:22531, st:225311024
 base, next_write : 4294964227 23555
 A
 write
 freebuflen:24576
 next write : 23555
-1024
+st_idx:23555, st:235551024
 base, next_write : 4294964227 24579
 A
 write
 freebuflen:23552
 next write : 24579
-1024
+st_idx:24579, st:245791024
 base, next_write : 4294964227 25603
 A
 write
 freebuflen:22528
 next write : 25603
-1024
+st_idx:25603, st:256031024
 base, next_write : 4294964227 26627
 A
 write
 freebuflen:21504
 next write : 26627
-1024
+st_idx:26627, st:266271024
 base, next_write : 4294964227 27651
 A
 write
 freebuflen:20480
 next write : 27651
-1024
+st_idx:27651, st:276511024
 base, next_write : 4294964227 28675
 A
 write
 freebuflen:19456
 next write : 28675
-1024
+st_idx:28675, st:286751024
 base, next_write : 4294964227 29699
 A
 write
 freebuflen:18432
 next write : 29699
-1024
+st_idx:29699, st:296991024
 base, next_write : 4294964227 30723
 A
 write
 freebuflen:17408
 next write : 30723
-1024
+st_idx:30723, st:307231024
 base, next_write : 4294964227 31747
 A
 write
 freebuflen:16384
 next write : 31747
-1024
+st_idx:31747, st:317471024
 base, next_write : 4294964227 32771
 A
 write
 freebuflen:15360
 next write : 32771
-1024
+st_idx:32771, st:327711024
 base, next_write : 4294964227 33795
 A
 write
 freebuflen:14336
 next write : 33795
-1024
+st_idx:33795, st:337951024
 base, next_write : 4294964227 34819
 A
 write
 freebuflen:13312
 next write : 34819
-1024
+st_idx:34819, st:348191024
 base, next_write : 4294964227 35843
 A
 write
 freebuflen:12288
 next write : 35843
-1024
+st_idx:35843, st:358431024
 base, next_write : 4294964227 36867
 A
 write
 freebuflen:11264
 next write : 36867
-1024
+st_idx:36867, st:368671024
 base, next_write : 4294964227 37891
 A
 write
 freebuflen:10240
 next write : 37891
-1024
+st_idx:37891, st:378911024
 base, next_write : 4294964227 38915
 A
 write
 freebuflen:9216
 next write : 38915
-1024
+st_idx:38915, st:389151024
 base, next_write : 4294964227 39939
 A
 write
 freebuflen:8192
 next write : 39939
-1024
+st_idx:39939, st:399391024
 base, next_write : 4294964227 40963
 A
 write
 freebuflen:7168
 next write : 40963
-1024
+st_idx:40963, st:409631024
 base, next_write : 4294964227 41987
 A
 write
 freebuflen:6144
 next write : 41987
-1024
+st_idx:41987, st:419871024
 base, next_write : 4294964227 43011
 A
 write
 freebuflen:5120
 next write : 43011
-1024
+st_idx:43011, st:430111024
 base, next_write : 4294964227 44035
 A
 write
 freebuflen:4096
 next write : 44035
-1024
+st_idx:44035, st:440351024
 base, next_write : 4294964227 45059
 A
 write
 freebuflen:3072
 next write : 45059
-1024
+st_idx:45059, st:450591024
 base, next_write : 4294964227 46083
 A
 write
 freebuflen:2048
 next write : 46083
-1024
+st_idx:46083, st:460831024
 base, next_write : 4294964227 47107
 A
 write
 freebuflen:1024
 next write : 47107
-1024
+st_idx:47107, st:471071024
 base, next_write : 4294964227 48131
 B
 testtransfer.cpp:277: Failure
@@ -392,306 +393,306 @@ Value of: total_size
   Actual: 51200
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_Symmetric (16 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_Symmetric (18 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Send_EOF
 write
 freebuflen:51200
 next write : 4294964227
-1024
+st_idx:48131, st:42949642271024
 base, next_write : 4294964227 4294965251
 A
 write
 freebuflen:50176
 next write : 4294965251
-1024
+st_idx:49155, st:42949652511024
 base, next_write : 4294964227 4294966275
 A
 write
 freebuflen:49152
 next write : 4294966275
-1024
+st_idx:50179, st:42949662751024
 base, next_write : 4294964227 3
 A
 write
 freebuflen:48128
 next write : 3
-1024
+st_idx:3, st:31024
 base, next_write : 4294964227 1027
 A
 write
 freebuflen:47104
 next write : 1027
-1024
+st_idx:1027, st:10271024
 base, next_write : 4294964227 2051
 A
 write
 freebuflen:46080
 next write : 2051
-1024
+st_idx:2051, st:20511024
 base, next_write : 4294964227 3075
 A
 write
 freebuflen:45056
 next write : 3075
-1024
+st_idx:3075, st:30751024
 base, next_write : 4294964227 4099
 A
 write
 freebuflen:44032
 next write : 4099
-1024
+st_idx:4099, st:40991024
 base, next_write : 4294964227 5123
 A
 write
 freebuflen:43008
 next write : 5123
-1024
+st_idx:5123, st:51231024
 base, next_write : 4294964227 6147
 A
 write
 freebuflen:41984
 next write : 6147
-1024
+st_idx:6147, st:61471024
 base, next_write : 4294964227 7171
 A
 write
 freebuflen:40960
 next write : 7171
-1024
+st_idx:7171, st:71711024
 base, next_write : 4294964227 8195
 A
 write
 freebuflen:39936
 next write : 8195
-1024
+st_idx:8195, st:81951024
 base, next_write : 4294964227 9219
 A
 write
 freebuflen:38912
 next write : 9219
-1024
+st_idx:9219, st:92191024
 base, next_write : 4294964227 10243
 A
 write
 freebuflen:37888
 next write : 10243
-1024
+st_idx:10243, st:102431024
 base, next_write : 4294964227 11267
 A
 write
 freebuflen:36864
 next write : 11267
-1024
+st_idx:11267, st:112671024
 base, next_write : 4294964227 12291
 A
 write
 freebuflen:35840
 next write : 12291
-1024
+st_idx:12291, st:122911024
 base, next_write : 4294964227 13315
 A
 write
 freebuflen:34816
 next write : 13315
-1024
+st_idx:13315, st:133151024
 base, next_write : 4294964227 14339
 A
 write
 freebuflen:33792
 next write : 14339
-1024
+st_idx:14339, st:143391024
 base, next_write : 4294964227 15363
 A
 write
 freebuflen:32768
 next write : 15363
-1024
+st_idx:15363, st:153631024
 base, next_write : 4294964227 16387
 A
 write
 freebuflen:31744
 next write : 16387
-1024
+st_idx:16387, st:163871024
 base, next_write : 4294964227 17411
 A
 write
 freebuflen:30720
 next write : 17411
-1024
+st_idx:17411, st:174111024
 base, next_write : 4294964227 18435
 A
 write
 freebuflen:29696
 next write : 18435
-1024
+st_idx:18435, st:184351024
 base, next_write : 4294964227 19459
 A
 write
 freebuflen:28672
 next write : 19459
-1024
+st_idx:19459, st:194591024
 base, next_write : 4294964227 20483
 A
 write
 freebuflen:27648
 next write : 20483
-1024
+st_idx:20483, st:204831024
 base, next_write : 4294964227 21507
 A
 write
 freebuflen:26624
 next write : 21507
-1024
+st_idx:21507, st:215071024
 base, next_write : 4294964227 22531
 A
 write
 freebuflen:25600
 next write : 22531
-1024
+st_idx:22531, st:225311024
 base, next_write : 4294964227 23555
 A
 write
 freebuflen:24576
 next write : 23555
-1024
+st_idx:23555, st:235551024
 base, next_write : 4294964227 24579
 A
 write
 freebuflen:23552
 next write : 24579
-1024
+st_idx:24579, st:245791024
 base, next_write : 4294964227 25603
 A
 write
 freebuflen:22528
 next write : 25603
-1024
+st_idx:25603, st:256031024
 base, next_write : 4294964227 26627
 A
 write
 freebuflen:21504
 next write : 26627
-1024
+st_idx:26627, st:266271024
 base, next_write : 4294964227 27651
 A
 write
 freebuflen:20480
 next write : 27651
-1024
+st_idx:27651, st:276511024
 base, next_write : 4294964227 28675
 A
 write
 freebuflen:19456
 next write : 28675
-1024
+st_idx:28675, st:286751024
 base, next_write : 4294964227 29699
 A
 write
 freebuflen:18432
 next write : 29699
-1024
+st_idx:29699, st:296991024
 base, next_write : 4294964227 30723
 A
 write
 freebuflen:17408
 next write : 30723
-1024
+st_idx:30723, st:307231024
 base, next_write : 4294964227 31747
 A
 write
 freebuflen:16384
 next write : 31747
-1024
+st_idx:31747, st:317471024
 base, next_write : 4294964227 32771
 A
 write
 freebuflen:15360
 next write : 32771
-1024
+st_idx:32771, st:327711024
 base, next_write : 4294964227 33795
 A
 write
 freebuflen:14336
 next write : 33795
-1024
+st_idx:33795, st:337951024
 base, next_write : 4294964227 34819
 A
 write
 freebuflen:13312
 next write : 34819
-1024
+st_idx:34819, st:348191024
 base, next_write : 4294964227 35843
 A
 write
 freebuflen:12288
 next write : 35843
-1024
+st_idx:35843, st:358431024
 base, next_write : 4294964227 36867
 A
 write
 freebuflen:11264
 next write : 36867
-1024
+st_idx:36867, st:368671024
 base, next_write : 4294964227 37891
 A
 write
 freebuflen:10240
 next write : 37891
-1024
+st_idx:37891, st:378911024
 base, next_write : 4294964227 38915
 A
 write
 freebuflen:9216
 next write : 38915
-1024
+st_idx:38915, st:389151024
 base, next_write : 4294964227 39939
 A
 write
 freebuflen:8192
 next write : 39939
-1024
+st_idx:39939, st:399391024
 base, next_write : 4294964227 40963
 A
 write
 freebuflen:7168
 next write : 40963
-1024
+st_idx:40963, st:409631024
 base, next_write : 4294964227 41987
 A
 write
 freebuflen:6144
 next write : 41987
-1024
+st_idx:41987, st:419871024
 base, next_write : 4294964227 43011
 A
 write
 freebuflen:5120
 next write : 43011
-1024
+st_idx:43011, st:430111024
 base, next_write : 4294964227 44035
 A
 write
 freebuflen:4096
 next write : 44035
-1024
+st_idx:44035, st:440351024
 base, next_write : 4294964227 45059
 A
 write
 freebuflen:3072
 next write : 45059
-1024
+st_idx:45059, st:450591024
 base, next_write : 4294964227 46083
 A
 write
 freebuflen:2048
 next write : 46083
-1024
+st_idx:46083, st:460831024
 base, next_write : 4294964227 47107
 A
 write
 freebuflen:1024
 next write : 47107
-1024
+st_idx:47107, st:471071024
 base, next_write : 4294964227 48131
 B
 testtransfer.cpp:277: Failure
@@ -704,7 +705,7 @@ Value of: total_size
   Actual: 51200
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_EOF (19 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Send_EOF (17 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -7291,7 +7292,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric (228 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_Symmetric (229 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_EOF
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -18168,7 +18169,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_EOF (239 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_EOF (232 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -24675,7 +24676,7 @@ Value of: total_size
   Actual: 0
 Expected: expect_size
 Which is: 131072
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1 (219 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer1 (237 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2
 testtransfer.cpp:263: Failure
 Value of: recv_buffer[j]
@@ -131622,6 +131623,14 @@ Value of: total_size
   Actual: 53
 Expected: expect_size
 Which is: 64819
-[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2 (666 ms)
+[  FAILED  ] TestEnv_Any.TestTransfer_Connect_Recv_SmallBuffer2 (602 ms)
 [ RUN      ] TestEnv_Any.TestTransfer_Accept_Send_Symmetric
+write
+freebuflen:44368
+next write : 1004196592
+st_idx:10992, st:10041965921024
+base, next_write : 104857664 1004197616
+A
+testtransfer.cpp:122: Failure
+Expected: (remaining) >= (0), actual: -333097712 vs 0
 Makefile:46: recipe for target 'test_part3' failed

@@ -836,6 +836,8 @@ int Socket::send_buf_write(void * buf, uint32_t st, uint32_t ed){
 	// |DDDD[edi]....[sti]DDDDD|
 	int st_idx = (st + BUFFER_SIZE) % BUFFER_SIZE;
 	int ed_idx = (ed + BUFFER_SIZE) % BUFFER_SIZE;
+
+	printf("st_idx:%d, st:%u", st_idx, st);
 	if(st_idx < ed_idx){
 		memcpy(this->send_buffer + st_idx, buf, ed_idx - st_idx + 1);
 	}
