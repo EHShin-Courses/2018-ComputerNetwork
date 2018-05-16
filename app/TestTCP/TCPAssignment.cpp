@@ -309,14 +309,12 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 	Socket *socket = tcp_context.at({pid, fd});
 	num_write = std::min({socket->send_buf_free_length(), (int)count});
 
-	int sent_num;
-
 	if(num_write != 0){ // there is free buffer space
 		st = socket->next_write;
 		ed = socket->next_write + num_write - 1;
 		socket->send_buf_write(buf, st, ed);
 		socket->next_write += num_write;
-		sent_num = send_maximum(socket);
+		send_maximum(socket);
 	}
 
 	if(socket->send_buf_free_length() != 0){
@@ -407,7 +405,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	struct tcp_header new_tcph_h = {0};
 	int new_payload_size = -1; // -1: no send
 	uint8_t* new_payload_buf = NULL;
-	int rcv_payload_size = packet->getSize() - (14+20+20);
+	size_t rcv_payload_size = packet->getSize() - (14+20+20);
 
 	// read packet
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
@@ -462,8 +460,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 			}
 			//send ACK <- TODO: or wait?
-			send_ACK(socket);
-
 		}
 		else if(duplicate){
 			//send ACK (again)
@@ -472,6 +468,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//write to buffer if possible (must not write segment partially)
 			//send (dup) ACK
 		}
+		send_ACK(socket);
 
 	}
 	if(ACK){
@@ -489,7 +486,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num < socket->next_seq_num);
 			}
 			if(valid_ack){
-				socket->send_base = rcv_tcph_h.ack_num;
+				socket->update_send_base(rcv_tcph_h.ack_num);
+				
 			}
 
 			if(socket->blocked_for_write){
@@ -689,7 +687,7 @@ void TCPAssignment::timerCallback(void* payload)
 /* Helper Functions */
 
 
-bool TCPAssignment::confirm_syn_client(Socket* socket, int ip, short port, int sn, int an){
+bool TCPAssignment::confirm_syn_client(Socket* socket, int ip, short port, uint32_t sn, uint32_t an){
 	std::vector<struct syn_client>::iterator it;
 	for(it = socket->syn_clients.begin(); it != socket->syn_clients.end(); it++){
 		if(ip == it->ip && port == it->port && it->seq_num == sn, it->ack_num == an){
@@ -731,6 +729,7 @@ Socket *TCPAssignment::find_socket(int src_ip, short src_port, int dst_ip, short
 	}
 	return listen_sock;
 }
+
 
 void TCPAssignment::set_common_tcp_fields(Packet *packet){
 
@@ -846,7 +845,22 @@ void TCPAssignment::set_sockaddr_family(struct sockaddr *addr){
 	((struct sockaddr_in *)addr)->sin_family = AF_INET;
 }
 
-
+void Socket::update_send_base(uint32_t ack_num){
+	uint32_t next_sb;
+	while(true){
+		try{
+			next_sb = this->sent_unACKed_segments.at(this->send_base)+1;
+			this->sent_unACKed_segments.erase(this->send_base);
+			this->send_base = next_sb;
+			if(this->send_base == ack_num){
+				break;
+			}
+		}
+		catch(const std::out_of_range& oor){
+			printf("update_send_base: no sent&unACKed segment corresponding to recieved ACK#\n");
+		}
+	}
+}
 
 
 int Socket::send_buf_free_length(){

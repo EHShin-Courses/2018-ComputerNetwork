@@ -55,13 +55,13 @@ public:
 	int recv_buf_write(void * buf, uint32_t st, uint32_t ed);
 	int recv_buf_read(void * buf, uint32_t st, uint32_t ed);
 
-
+	void update_send_base(uint32_t ack_num);
 
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
-	int ack_num; // expected sequence number for this socket to receive
-	int seq_num; // next sequence number to send
+	uint32_t ack_num; // expected sequence number for this socket to receive
+	uint32_t seq_num; // next sequence number to send
 	int syscallUUID;
 	int backlog;
 	int pid;
@@ -114,8 +114,8 @@ public:
 struct syn_client{
 	int ip;
 	short port;
-	int ack_num;
-	int seq_num;
+	uint32_t ack_num;
+	uint32_t seq_num;
 
 };
 
@@ -128,8 +128,8 @@ struct ip_header{
 struct tcp_header{
 	short source_port;
 	short dest_port;
-	int seq_num;
-	int ack_num;
+	uint32_t seq_num;
+	uint32_t ack_num;
 
 	unsigned char reserved_1 : 4;
 	unsigned char hlen : 4;
@@ -197,7 +197,7 @@ protected:
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
 
 
-	bool confirm_syn_client(Socket* socket, int ip, short port, int sn, int an);
+	bool confirm_syn_client(Socket* socket, int ip, short port, uint32_t sn, uint32_t an);
 	Socket *find_socket(int src_ip, short src_port, int dst_ip, short dst_port);
 
 	void write_headers(Packet *packet, struct ip_header *ip, struct tcp_header *tcp);
