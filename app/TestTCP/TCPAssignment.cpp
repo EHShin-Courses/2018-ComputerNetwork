@@ -468,7 +468,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 			}
 			//send ACK <- TODO: or wait?
-
 		}
 		else if(duplicate){
 			//send ACK (again)
@@ -510,8 +509,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 					socket->cwnd += Socket::MSS * Socket::MSS / cwnd;
 				}
-
-
 			}
 
 			if(socket->blocked_for_write){
@@ -754,6 +751,7 @@ Socket *TCPAssignment::find_socket(int src_ip, short src_port, int dst_ip, short
 	return listen_sock;
 }
 
+
 void TCPAssignment::set_common_tcp_fields(Packet *packet){
 
 	int packet_size = packet->getSize();
@@ -868,7 +866,22 @@ void TCPAssignment::set_sockaddr_family(struct sockaddr *addr){
 	((struct sockaddr_in *)addr)->sin_family = AF_INET;
 }
 
-
+void Socket::update_send_base(uint32_t ack_num){
+	uint32_t next_sb;
+	while(true){
+		try{
+			next_sb = this->sent_unACKed_segments.at(this->send_base)+1;
+			this->sent_unACKed_segments.erase(this->send_base);
+			this->send_base = next_sb;
+			if(this->send_base == ack_num){
+				break;
+			}
+		}
+		catch(const std::out_of_range& oor){
+			printf("update_send_base: no sent&unACKed segment corresponding to recieved ACK#\n");
+		}
+	}
+}
 
 
 int Socket::send_buf_free_length(){
