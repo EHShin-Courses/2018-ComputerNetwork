@@ -108,7 +108,7 @@ public:
 
 	CongestionState congestion_state;
 	bool RTT_time_calculating;
-	Time RTT_sent_time
+	Time RTT_sent_time;
 	uint32_t RTT_wating_ACK_num;
 
 
@@ -116,7 +116,13 @@ public:
 	Time RTTVAR;
 	Time RTO;
 
-	int cwnd;
+	uint32_t cwnd;
+
+	bool timer_currently_running;
+	UUID timer_UUID;
+
+	uint32_t ssthresh;
+	int dupACKcount;
 
 
 public:
@@ -187,6 +193,7 @@ private:
 
 	const int MSS = 512;
 
+
 	//better place helpers here...
 	void send_data_packet(Socket* socket, uint32_t st, uint32_t ed);
 	int send_maximum(Socket * socket);
@@ -236,6 +243,7 @@ protected:
 	void set_sockaddr_port(struct sockaddr *addr, short port);
 	void set_sockaddr_family(struct sockaddr *addr);
 	void calculate_RTO(Socket *socket, uint32_t ACK_num);
+	void retransmit_unACKed_packets(Socket *socket);
 
 };
 

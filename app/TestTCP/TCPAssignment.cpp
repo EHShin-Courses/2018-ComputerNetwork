@@ -13,6 +13,7 @@
 #include <E/Networking/E_Packet.hpp>
 #include <E/Networking/E_NetworkUtil.hpp>
 #include "TCPAssignment.hpp"
+#include <E/E_TimeUtil.hpp>
 
 namespace E
 {
@@ -55,13 +56,16 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->receive_buffer = NULL;
 	this->blocked_for_write = false;
 	this->blocked_for_read = false;
-	this->congestion_state = SLOW_START;
+	this->congestion_state = CongestionState::SLOW_START;
 	this->RTT_time_calculating = false;
 
-	this->RTT = makeTime(100, MSEC);
-	this->RTTVAR = makeTime(20, MSEC);
+	this->RTT = TimeUtil::makeTime(100, TimeUtil::MSEC);
+	this->RTTVAR = TimeUtil::makeTime(20, TimeUtil::MSEC);
 	this->RTO = this->RTT + this->RTTVAR * 4;
-	this->cwnd = MSS;
+	this->cwnd = 512;
+	this->timer_currently_running = false;
+	this->ssthresh = 64 * 1024;
+	this->dupACKcount = 0;
 }
 
 Socket::~Socket()
@@ -489,6 +493,29 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			bool valid_ack; //Check that ACK is for some unacked but sent byte
 
 
+
+			bool is_duplicate_ACK = false;
+			try{
+				socket->sent_unACKed_segments.at(rcv_tcph_h.ack_num);
+			}
+			catch(const std::out_of_range& oor){
+				is_duplicate_ACK = true;
+			}
+			if(is_duplicate_ACK){
+				if(socket->congestion_state == CongestionState::FAST_RECOVERY){
+					socket->cwnd += TCPAssignment::MSS;
+					send_maximum(socket);					
+				}
+				else{
+					socket->dupACKcount++;
+					if(socket->dupACKcount == 3){
+						socket->ssthresh = socket->cwnd/2;
+						socket->cwnd = socket->ssthresh + 3;
+						retransmit_unACKed_packets(socket);
+						socket->congestion_state = CongestionState::FAST_RECOVERY;
+					}
+				}
+			}
 			if(socket->send_base < socket->next_seq_num){
 				valid_ack = (socket->send_base < rcv_tcph_h.ack_num && rcv_tcph_h.ack_num < socket->next_seq_num);
 			}
@@ -496,18 +523,32 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num < socket->next_seq_num);
 			}
 			if(valid_ack){
+				socket->dupACKcount = 0;
+
+				uint32_t old_send_base = socket->send_base;
 				socket->update_send_base(rcv_tcph_h.ack_num);
+				if(old_send_base != socket->send_base && socket->timer_currently_running){
+					cancelTimer(socket->timer_UUID);
+					if(!socket->sent_unACKed_segments.empty()){
+						socket->timer_UUID = addTimer((void *)socket, socket->RTO);
+					}
+
+					else{
+						socket->timer_currently_running = false;
+					}
+				}
+
 				calculate_RTO(socket, rcv_tcph_h.ack_num);
 
 				if(socket->congestion_state == CongestionState::SLOW_START){
-					socket->cwnd += 1;
+					socket->cwnd += TCPAssignment::MSS;
 				}
 				else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
-					socket->cwnd/=2;
+					socket->cwnd = socket->ssthresh;
 					socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
 				}
 				else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
-					socket->cwnd += Socket::MSS * Socket::MSS / cwnd;
+					socket->cwnd += TCPAssignment::MSS * TCPAssignment::MSS / socket->cwnd;
 				}
 			}
 
@@ -702,7 +743,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 void TCPAssignment::timerCallback(void* payload)
 {
+	Socket *socket = (Socket *)payload;
+	socket->timer_currently_running = false;
+	socket->ssthresh = socket->cwnd/2;
+	socket->cwnd = TCPAssignment::MSS;
+	socket->dupACKcount = 0;
 
+	if(socket->congestion_state == CongestionState::SLOW_START){
+
+	}
+	else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
+		socket->congestion_state = CongestionState::SLOW_START;
+	}
+	else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
+		socket->congestion_state = CongestionState::SLOW_START;
+	}
+
+	retransmit_unACKed_packets(socket);
 }
 
 /* Helper Functions */
@@ -982,7 +1039,6 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	tcph_h.ack_flag = 1;
 
 
-
 	if(!(socket->RTT_time_calculating)){
 		socket->RTT_time_calculating = true;
 		socket->RTT_sent_time = this->getHost()->getSystem()->getCurrentTime();
@@ -1042,8 +1098,12 @@ int TCPAssignment::send_maximum(Socket * socket){
 			// limit # of sent but unACKed bytes to congestion window
 			return ret;
 		}
+		if(!socket->timer_currently_running){
+			socket->timer_UUID = addTimer((void *)socket, socket->RTO);
+			socket->timer_currently_running = true;
+		}
 		st = socket->next_seq_num;
-		segment_size = std::min({(int)(socket->next_write - st), MSS, socket->cwnd -(socket->next_seq_num - socket->send_base)});
+		segment_size = std::min({(int)(socket->next_write - st), MSS, (int)(socket->cwnd -(socket->next_seq_num - socket->send_base))});
 		ed = st + segment_size - 1;
 		send_data_packet(socket, st, ed);
 		socket->next_seq_num += segment_size;
@@ -1056,13 +1116,31 @@ void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
 	if(!(socket->RTT_time_calculating)){
 		return;
 	}
-	if(ACK_num == socket->wating_ACK_num){
+	if(ACK_num == socket->RTT_wating_ACK_num){
 		Time recv_time = this->getHost()->getSystem()->getCurrentTime();
 		Time sample_RTT = recv_time - socket->RTT_sent_time;
 		socket->RTT = socket->RTT - (socket->RTT >> 3) + (sample_RTT >> 3);
 		socket->RTTVAR = socket->RTTVAR - (socket->RTTVAR >> 2) + ((socket->RTT - sample_RTT) >> 2);
 		socket->RTO = socket->RTT + 4 * socket->RTTVAR;
 		socket->RTT_time_calculating = false;
+	}
+}
+
+void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
+
+	if(socket->timer_currently_running){
+		cancelTimer(socket->timer_UUID);
+		socket->timer_currently_running = false;
+	}
+	if(socket->sent_unACKed_segments.empty()){
+		printf("retransmit_unACKed_packets : no segment to retransmit!!!\n");
+	}
+	else{
+		uint32_t ed = socket->sent_unACKed_segments.at(socket->send_base);
+		send_data_packet(socket, socket->send_base, ed);
+		socket->timer_UUID = addTimer((void *)socket, socket->RTO);
+		socket->timer_currently_running = true;
+
 	}
 }
 
