@@ -43,6 +43,12 @@ enum class TCPState{
 	TIME_WAIT
 };
 
+enum class CongestionState{
+	SLOW_START,
+	FAST_RECOVERY,
+	CONGESTION_AVOIDANCE
+};
+
 // Socket : open socket's information
 class Socket{
 
@@ -54,7 +60,6 @@ public:
 	int send_buf_read(void * buf, uint32_t st, uint32_t ed);
 	int recv_buf_write(void * buf, uint32_t st, uint32_t ed);
 	int recv_buf_read(void * buf, uint32_t st, uint32_t ed);
-
 
 
 	struct sockaddr addr;
@@ -75,7 +80,6 @@ public:
 
 	int FIN_seq_num;
 
-	int cwnd;
 
 	int estimatedRTT;
 	int DevRTT;
@@ -101,12 +105,27 @@ public:
 	bool blocked_for_write;
 	bool blocked_for_read;
 
+	CongestionState congestion_state;
+	bool RTT_time_calculating;
+	Time RTT_sent_time
+	uint32_t RTT_wating_ACK_num;
+
+
+	Time RTT;
+	Time RTTVAR;
+	Time RTO;
+
+	int cwnd;
+
 
 public:
 	Socket(int pid, int fd, TCPState state);
+
 	virtual ~Socket();
 
 	static const uint32_t BUFFER_SIZE = 51200;
+
+
 };
 
 
@@ -215,6 +234,7 @@ protected:
 	void set_sockaddr_ip(struct sockaddr *addr, int ip);
 	void set_sockaddr_port(struct sockaddr *addr, short port);
 	void set_sockaddr_family(struct sockaddr *addr);
+	void calculate_RTO(Socket *socket, uint32_t ACK_num);
 
 };
 

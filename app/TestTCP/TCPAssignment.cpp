@@ -55,6 +55,13 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->receive_buffer = NULL;
 	this->blocked_for_write = false;
 	this->blocked_for_read = false;
+	this->congestion_state = SLOW_START;
+	this->RTT_time_calculating = false;
+
+	this->RTT = makeTime(100, MSEC);
+	this->RTTVAR = makeTime(20, MSEC);
+	this->RTO = this->RTT + this->RTTVAR * 4;
+	this->cwnd = MSS;
 }
 
 Socket::~Socket()
@@ -309,14 +316,13 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 	Socket *socket = tcp_context.at({pid, fd});
 	num_write = std::min({socket->send_buf_free_length(), (int)count});
 
-	int sent_num;
 
 	if(num_write != 0){ // there is free buffer space
 		st = socket->next_write;
 		ed = socket->next_write + num_write - 1;
 		socket->send_buf_write(buf, st, ed);
 		socket->next_write += num_write;
-		sent_num = send_maximum(socket);
+		send_maximum(socket);
 	}
 
 	if(socket->send_buf_free_length() != 0){
@@ -407,7 +413,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	struct tcp_header new_tcph_h = {0};
 	int new_payload_size = -1; // -1: no send
 	uint8_t* new_payload_buf = NULL;
-	int rcv_payload_size = packet->getSize() - (14+20+20);
+	size_t rcv_payload_size = packet->getSize() - (14+20+20);
 
 	// read packet
 	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
@@ -462,7 +468,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 			}
 			//send ACK <- TODO: or wait?
-			send_ACK(socket);
 
 		}
 		else if(duplicate){
@@ -472,6 +477,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//write to buffer if possible (must not write segment partially)
 			//send (dup) ACK
 		}
+		send_ACK(socket);
 
 	}
 	if(ACK){
@@ -482,6 +488,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//	socket->send_base = rcv_tcph_h.ack_num;
 			//}
 			bool valid_ack; //Check that ACK is for some unacked but sent byte
+
+
 			if(socket->send_base < socket->next_seq_num){
 				valid_ack = (socket->send_base < rcv_tcph_h.ack_num && rcv_tcph_h.ack_num < socket->next_seq_num);
 			}
@@ -489,7 +497,21 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num < socket->next_seq_num);
 			}
 			if(valid_ack){
-				socket->send_base = rcv_tcph_h.ack_num;
+				socket->update_send_base(rcv_tcph_h.ack_num);
+				calculate_RTO(socket, rcv_tcph_h.ack_num);
+
+				if(socket->congestion_state == CongestionState::SLOW_START){
+					socket->cwnd += 1;
+				}
+				else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
+					socket->cwnd/=2;
+					socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
+				}
+				else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
+					socket->cwnd += Socket::MSS * Socket::MSS / cwnd;
+				}
+
+
 			}
 
 			if(socket->blocked_for_write){
@@ -689,7 +711,7 @@ void TCPAssignment::timerCallback(void* payload)
 /* Helper Functions */
 
 
-bool TCPAssignment::confirm_syn_client(Socket* socket, int ip, short port, int sn, int an){
+bool TCPAssignment::confirm_syn_client(Socket* socket, int ip, short port, uint32_t sn, uint32_t an){
 	std::vector<struct syn_client>::iterator it;
 	for(it = socket->syn_clients.begin(); it != socket->syn_clients.end(); it++){
 		if(ip == it->ip && port == it->port && it->seq_num == sn, it->ack_num == an){
@@ -926,6 +948,9 @@ int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
 	return ed-st;	
 }
 
+
+
+
 //send seq# st ~ seq# ed
 void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 
@@ -943,6 +968,14 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	tcph_h.ack_num = socket->next_receive;
 	tcph_h.ack_flag = 1;
 
+
+
+	if(!(socket->RTT_time_calculating)){
+		socket->RTT_time_calculating = true;
+		socket->RTT_sent_time = this->getHost()->getSystem()->getCurrentTime();
+		socket->RTT_wating_ACK_num = ed + 1;
+	}
+
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
 
@@ -953,6 +986,7 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	this->write_headers(send_packet, &iph_n, &tcph_n);
 	send_packet->writeData(14 + 20 + 20, buf, new_payload_size);
 	this->set_common_tcp_fields(send_packet);
+
 	this->sendPacket("IPv4", send_packet);
 	free(buf);
 }
@@ -989,11 +1023,14 @@ int TCPAssignment::send_maximum(Socket * socket){
 	int ret = 0;
 	while(true){
 		if(socket->next_seq_num == socket->next_write){
-			//TODO:congestion control
+			return ret;
+		}
+		if(socket->next_seq_num - socket->send_base >= socket->cwnd){
+			// limit # of sent but unACKed bytes to congestion window
 			return ret;
 		}
 		st = socket->next_seq_num;
-		segment_size = std::min({(int)(socket->next_write - st), MSS});
+		segment_size = std::min({(int)(socket->next_write - st), MSS, socket->cwnd -(socket->next_seq_num - socket->send_base)});
 		ed = st + segment_size - 1;
 		send_data_packet(socket, st, ed);
 		socket->next_seq_num += segment_size;
@@ -1002,5 +1039,18 @@ int TCPAssignment::send_maximum(Socket * socket){
 	}
 }
 
+void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
+	if(!(socket->RTT_time_calculating)){
+		return;
+	}
+	if(ACK_num == socket->wating_ACK_num){
+		Time recv_time = this->getHost()->getSystem()->getCurrentTime();
+		Time sample_RTT = recv_time - socket->RTT_sent_time;
+		socket->RTT = socket->RTT - (socket->RTT >> 3) + (sample_RTT >> 3);
+		socket->RTTVAR = socket->RTTVAR - (socket->RTTVAR >> 2) + ((socket->RTT - sample_RTT) >> 2);
+		socket->RTO = socket->RTT + 4 * socket->RTTVAR;
+		socket->RTT_time_calculating = false;
+	}
+}
 
 }
