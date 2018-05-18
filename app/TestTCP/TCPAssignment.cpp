@@ -66,6 +66,8 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->timer_currently_running = false;
 	this->ssthresh = 64 * 1024;
 	this->dupACKcount = 0;
+
+	this->closed_by_user = true;
 }
 
 Socket::~Socket()
@@ -91,10 +93,6 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 
 	int ret; 
-	struct ip_header iph_n = {0};
-	struct ip_header iph_h = {0};
-	struct tcp_header tcph_n = {0};
-	struct tcp_header tcph_h = {0};
 
 	Socket *socket = tcp_context.at({pid, fd});
 	//if(socket->is_connected == 0){
@@ -108,39 +106,18 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int fd){
 	}
 
 	else{
-
-
-		// TODO : FIN retransmission
+		socket->closed_by_user = true;
+		// must send FIN after sending data in write buffer
+		// TODO : delayed FIN transmission
 
 		// send FIN packet
 		//socket->syscallUUID = syscallUUID;
 
 		//socket->sentFIN = 1;
-		if(socket->state == TCPState::ESTABLISHED){
-			//active close
-			socket->state = TCPState::FIN_WAIT_1;
-		}
-		else if(socket->state == TCPState::CLOSE_WAIT){
-			socket->state = TCPState::LAST_ACK;
-		}
+
 
 		socket->FIN_seq_num = socket->seq_num;
 
-		iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
-		iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
-		tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
-		tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
-
-		tcph_h.fin_flag = 1;
-		tcph_h.seq_num = (socket->seq_num)++;
-
-		this->hton_ip_header(&iph_h, &iph_n);
-		this->hton_tcp_header(&tcph_h, &tcph_n);
-
-		Packet *send_packet = this->allocatePacket(14+20+20);
-		this->write_headers(send_packet, &iph_n, &tcph_n);
-		this->set_common_tcp_fields(send_packet);
-		this->sendPacket("IPv4", send_packet);
 
 		//newly added: why not return immediately?
 		this->returnSystemCall(syscallUUID, 0);
@@ -491,15 +468,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//	socket->send_base = rcv_tcph_h.ack_num;
 			//}
 			bool valid_ack; //Check that ACK is for some unacked but sent byte
-
-
-
 			bool is_duplicate_ACK = false;
-			try{
-				socket->sent_unACKed_segments.at(rcv_tcph_h.ack_num);
-			}
-			catch(const std::out_of_range& oor){
-				is_duplicate_ACK = true;
+			if(rcv_tcph_h.ack_num != socket->next_seq_num){
+				try{
+					socket->sent_unACKed_segments.at(rcv_tcph_h.ack_num);
+				}
+				catch(const std::out_of_range& oor){
+					is_duplicate_ACK = true;
+				}				
 			}
 			if(is_duplicate_ACK){
 				if(socket->congestion_state == CongestionState::FAST_RECOVERY){
@@ -511,16 +487,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					if(socket->dupACKcount == 3){
 						socket->ssthresh = socket->cwnd/2;
 						socket->cwnd = socket->ssthresh + 3;
+						printf("retransmit due to dupACK\n");
 						retransmit_unACKed_packets(socket);
 						socket->congestion_state = CongestionState::FAST_RECOVERY;
 					}
 				}
 			}
-			if(socket->send_base < socket->next_seq_num){
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num && rcv_tcph_h.ack_num < socket->next_seq_num);
+			if(socket->send_base <= socket->next_seq_num){
+				valid_ack = (socket->send_base < rcv_tcph_h.ack_num && rcv_tcph_h.ack_num <= socket->next_seq_num);
 			}
 			else{
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num < socket->next_seq_num);
+				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num <= socket->next_seq_num);
 			}
 			if(valid_ack){
 				socket->dupACKcount = 0;
@@ -528,6 +505,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				uint32_t old_send_base = socket->send_base;
 				socket->update_send_base(rcv_tcph_h.ack_num);
 				if(old_send_base != socket->send_base && socket->timer_currently_running){
+					//printf("cancel timer!");
 					cancelTimer(socket->timer_UUID);
 					if(!socket->sent_unACKed_segments.empty()){
 						socket->timer_UUID = addTimer((void *)socket, socket->RTO);
@@ -758,8 +736,9 @@ void TCPAssignment::timerCallback(void* payload)
 	else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 		socket->congestion_state = CongestionState::SLOW_START;
 	}
-
+	printf("TO!");
 	retransmit_unACKed_packets(socket);
+	
 }
 
 /* Helper Functions */
@@ -1084,6 +1063,33 @@ void TCPAssignment::send_ACK(Socket * socket){
 	this->sendPacket("IPv4", send_packet);
 }
 
+void TCPAssignment::send_FIN(Socket * socket){
+	struct ip_header iph_n = {0};
+	struct ip_header iph_h = {0};
+	struct tcp_header tcph_n = {0};
+	struct tcp_header tcph_h = {0};
+
+	iph_h.source_ip = this->get_sockaddr_ip(&(socket->addr));
+	iph_h.dest_ip = this->get_sockaddr_ip(&(socket->peer_addr));
+	tcph_h.source_port = this->get_sockaddr_port(&(socket->addr));
+	tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
+
+	tcph_h.seq_num = socket->FIN_seq_num;
+	tcph_h.ack_num = socket->next_receive;
+	tcph_h.fin_flag = 1;
+
+	this->hton_ip_header(&iph_h, &iph_n);
+	this->hton_tcp_header(&tcph_h, &tcph_n);
+
+	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
+	this->write_headers(send_packet, &iph_n, &tcph_n);
+	this->set_common_tcp_fields(send_packet);
+	this->sendPacket("IPv4", send_packet);
+
+
+
+}
+
 //first transmission of maximum possible amount of data
 int TCPAssignment::send_maximum(Socket * socket){
 	uint32_t st, ed;
@@ -1092,11 +1098,11 @@ int TCPAssignment::send_maximum(Socket * socket){
 	int ret = 0;
 	while(true){
 		if(socket->next_seq_num == socket->next_write){
-			return ret;
+			break;
 		}
-		if(socket->next_seq_num - socket->send_base >= socket->cwnd){
+		if(socket->next_seq_num - socket->send_base >= std::min({socket->cwnd, (uint32_t)51200/2})){
 			// limit # of sent but unACKed bytes to congestion window
-			return ret;
+			break;
 		}
 		if(!socket->timer_currently_running){
 			socket->timer_UUID = addTimer((void *)socket, socket->RTO);
@@ -1110,6 +1116,19 @@ int TCPAssignment::send_maximum(Socket * socket){
 		socket->sent_unACKed_segments.insert({st, ed});		
 		ret += segment_size;
 	}
+	if(socket->closed_by_user && socket->next_seq_num == socket->FIN_seq_num){
+		send_FIN(socket);
+		socket->next_seq_num++;
+		socket->sent_unACKed_segments.insert({socket->FIN_seq_num,socket->FIN_seq_num});
+		if(socket->state == TCPState::ESTABLISHED){
+			//active close
+			socket->state = TCPState::FIN_WAIT_1;
+		}
+		else if(socket->state == TCPState::CLOSE_WAIT){
+			socket->state = TCPState::LAST_ACK;
+		}
+	}
+	return ret;
 }
 
 void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
@@ -1124,10 +1143,10 @@ void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
 		socket->RTO = socket->RTT + 4 * socket->RTTVAR;
 		socket->RTT_time_calculating = false;
 	}
+	//printf("RTO:%d\n", (int)TimeUtil::getTime(socket->RTO, TimeUtil::MSEC));
 }
 
 void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
-
 	if(socket->timer_currently_running){
 		cancelTimer(socket->timer_UUID);
 		socket->timer_currently_running = false;
@@ -1137,10 +1156,14 @@ void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
 	}
 	else{
 		uint32_t ed = socket->sent_unACKed_segments.at(socket->send_base);
-		send_data_packet(socket, socket->send_base, ed);
+		if(socket->send_base == socket->FIN_seq_num){
+			send_FIN(socket);
+		}
+		else{
+			send_data_packet(socket, socket->send_base, ed);
+		}
 		socket->timer_UUID = addTimer((void *)socket, socket->RTO);
 		socket->timer_currently_running = true;
-
 	}
 }
 

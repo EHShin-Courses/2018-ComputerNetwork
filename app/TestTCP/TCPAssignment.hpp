@@ -79,8 +79,7 @@ public:
 	std::vector<std::pair<int, struct sockaddr*>> accept_list; // syscallUUID, &client_addr
 	std::vector<struct syn_client> syn_clients;
 
-	int FIN_seq_num;
-
+	uint32_t FIN_seq_num;
 
 	int estimatedRTT;
 	int DevRTT;
@@ -124,6 +123,7 @@ public:
 	uint32_t ssthresh;
 	int dupACKcount;
 
+	bool closed_by_user;
 
 public:
 	Socket(int pid, int fd, TCPState state);
@@ -198,6 +198,7 @@ private:
 	void send_data_packet(Socket* socket, uint32_t st, uint32_t ed);
 	int send_maximum(Socket * socket);
 	void send_ACK(Socket * socket);
+	void send_FIN(Socket * socket);
 
 
 	virtual void timerCallback(void* payload) final;
