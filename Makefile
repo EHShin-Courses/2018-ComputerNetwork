@@ -67,6 +67,9 @@ test_connect2: all
 test_connect3: all
 	@-build/testTCP --gtest_filter="TestEnv_Any.TestTransfer_Connect_Recv_Symmetric" --gtest_output=xml:part2.xml
 
+test_congestion2: all
+	@-build/testTCP --gtest_filter="TestEnv_Congestion2.TestCongestion2" --gtest_output=xml:part4.xml
+
 doxygen:
 	doxygen doxygen/Doxyfile
 

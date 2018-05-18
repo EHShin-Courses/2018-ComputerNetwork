@@ -487,7 +487,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 					if(socket->dupACKcount == 3){
 						socket->ssthresh = socket->cwnd/2;
 						socket->cwnd = socket->ssthresh + 3;
-						printf("retransmit due to dupACK\n");
+						//printf("retransmit due to dupACK\n");
 						retransmit_unACKed_packets(socket);
 						socket->congestion_state = CongestionState::FAST_RECOVERY;
 					}
@@ -736,7 +736,7 @@ void TCPAssignment::timerCallback(void* payload)
 	else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 		socket->congestion_state = CongestionState::SLOW_START;
 	}
-	printf("TO!");
+	//printf("TO!");
 	retransmit_unACKed_packets(socket);
 	
 }
