@@ -148,7 +148,7 @@ protected:
 			}
 
 			loop++;
-			if(loop_count != 0 && loop_count <= loop)
+			if(loop_count !=  0 && loop_count <= loop)
 				break;
 		}
 

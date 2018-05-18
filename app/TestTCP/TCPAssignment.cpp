@@ -432,7 +432,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		//check window
 		bool in_order = socket->next_receive == (uint32_t)rcv_tcph_h.seq_num;
 		bool duplicate = false;
-		bool out_of_order = false;
+		bool out_of_order = (socket->next_receive < (uint32_t)rcv_tcph_h.seq_num && (uint32_t)rcv_tcph_h.seq_num < socket->next_receive + Socket::BUFFER_SIZE);
 		if(in_order){
 			//write to buffer if possible (must not write segment partially)
 
@@ -443,6 +443,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				socket->recv_buf_write(buf, socket->next_receive, socket->next_receive+rcv_payload_size-1);
 				free(buf);
 				socket->next_receive += rcv_payload_size;
+				while(true){
+					try{
+						uint32_t last_seq = socket->received_unordered_segments.at(socket->next_receive);
+						socket->received_unordered_segments.erase(socket->next_receive);
+						socket->next_receive = last_seq + 1;
+					}
+					catch(const std::out_of_range& oor){
+						break;
+					}
+				}
 				if(socket->blocked_for_read){
 					socket->blocked_for_read = false;
 					this->returnSystemCall(socket->syscallUUID, socket->return_num);		
@@ -456,6 +466,24 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		else if(out_of_order){
 			//write to buffer if possible (must not write segment partially)
 			//send (dup) ACK
+			bool can_write = (socket->recv_buf_data_length() + rcv_payload_size <= Socket::BUFFER_SIZE);
+			if(can_write){
+				void * buf = malloc(rcv_payload_size);
+				packet->readData(14+20+20, buf, rcv_payload_size);
+				socket->recv_buf_write(buf, rcv_tcph_h.seq_num, rcv_tcph_h.seq_num+rcv_payload_size-1);
+				free(buf);
+				try{
+					socket->received_unordered_segments.at(rcv_tcph_h.seq_num);
+				}
+				catch(const std::out_of_range& oor){
+					socket->received_unordered_segments.insert({rcv_tcph_h.seq_num, (uint32_t)(rcv_tcph_h.seq_num + rcv_payload_size - 1)});
+				}
+
+				if(socket->blocked_for_read){
+					socket->blocked_for_read = false;
+					this->returnSystemCall(socket->syscallUUID, socket->return_num);		
+				}				
+			}
 		}
 		send_ACK(socket);
 
@@ -470,14 +498,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			bool valid_ack; //Check that ACK is for some unacked but sent byte
 			bool is_duplicate_ACK = false;
 			if(rcv_tcph_h.ack_num != socket->next_seq_num){
-				try{
-					socket->sent_unACKed_segments.at(rcv_tcph_h.ack_num);
+				std::unordered_map<uint32_t, uint32_t>::iterator it = socket->sent_unACKed_segments.find(rcv_tcph_h.ack_num);
+				if(it == socket->sent_unACKed_segments.end()){
+					is_duplicate_ACK = true;			
 				}
-				catch(const std::out_of_range& oor){
-					is_duplicate_ACK = true;
-				}				
 			}
 			if(is_duplicate_ACK){
+				printf("duplicate\n");
 				if(socket->congestion_state == CongestionState::FAST_RECOVERY){
 					socket->cwnd += TCPAssignment::MSS;
 					send_maximum(socket);					
@@ -494,10 +521,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				}
 			}
 			if(socket->send_base <= socket->next_seq_num){
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num && rcv_tcph_h.ack_num <= socket->next_seq_num);
+				valid_ack = (socket->send_base < rcv_tcph_h.ack_num) && (rcv_tcph_h.ack_num <= socket->next_seq_num);
 			}
 			else{
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num || rcv_tcph_h.ack_num <= socket->next_seq_num);
+				valid_ack = (socket->send_base < rcv_tcph_h.ack_num) || (rcv_tcph_h.ack_num <= socket->next_seq_num);
 			}
 			if(valid_ack){
 				socket->dupACKcount = 0;
@@ -520,6 +547,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 				if(socket->congestion_state == CongestionState::SLOW_START){
 					socket->cwnd += TCPAssignment::MSS;
+					if(socket->cwnd >= socket->ssthresh){
+						socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
+					}
 				}
 				else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
 					socket->cwnd = socket->ssthresh;
@@ -528,13 +558,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 					socket->cwnd += TCPAssignment::MSS * TCPAssignment::MSS / socket->cwnd;
 				}
-			}
 
+			}
 			if(socket->blocked_for_write){
 				//wake write()
 				socket->blocked_for_write = false;
 				this->returnSystemCall(socket->syscallUUID, socket->return_num);
 			}
+
 			send_maximum(socket);
 		}
 	}
@@ -1111,10 +1142,15 @@ int TCPAssignment::send_maximum(Socket * socket){
 		st = socket->next_seq_num;
 		segment_size = std::min({(int)(socket->next_write - st), MSS, (int)(socket->cwnd -(socket->next_seq_num - socket->send_base))});
 		ed = st + segment_size - 1;
-		send_data_packet(socket, st, ed);
-		socket->next_seq_num += segment_size;
-		socket->sent_unACKed_segments.insert({st, ed});		
-		ret += segment_size;
+		if(segment_size > 0){
+			send_data_packet(socket, st, ed);
+			socket->next_seq_num += segment_size;
+			socket->sent_unACKed_segments.insert({st, ed});
+			ret += segment_size;
+		}
+		else{
+			break;
+		}
 	}
 	if(socket->closed_by_user && socket->next_seq_num == socket->FIN_seq_num){
 		send_FIN(socket);
