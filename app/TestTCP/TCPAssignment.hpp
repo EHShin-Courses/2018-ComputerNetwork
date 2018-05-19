@@ -108,7 +108,6 @@ public:
 	Time RTT_sent_time;
 	uint32_t RTT_wating_ACK_num;
 
-
 	Time RTT;
 	Time RTTVAR;
 	Time RTO;
@@ -123,6 +122,8 @@ public:
 	int dupACKcount;
 
 	bool closed_by_user;
+	bool closed_by_peer;
+	
 
 public:
 	Socket(int pid, int fd, TCPState state);

@@ -67,7 +67,10 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->ssthresh = 64 * 1024;
 	this->dupACKcount = 0;
 
-	this->closed_by_user = true;
+	this->closed_by_user = false;
+	this->closed_by_peer = false;
+
+	this->rwnd = BUFFER_SIZE;
 }
 
 Socket::~Socket()
@@ -260,9 +263,8 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int fd, void *buf, s
 	size_t num_read;
 	uint32_t st, ed;
 	Socket *socket = tcp_context.at({pid, fd});
+
 	num_read = std::min({socket->recv_buf_data_length(), (int)count});
-
-
 	if(num_read != 0){
 		st = socket->next_read;
 		ed = socket->next_read + num_read - 1;
@@ -746,10 +748,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
 	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
 
-	//bool SYN = (rcv_tcph_h.syn_flag == 1);
-	//bool ACK = (rcv_tcph_h.ack_flag == 1);
-	//bool FIN = (rcv_tcph_h.fin_flag == 1);
-	//size_t rcv_payload_size = packet->getSize() - (14+20+20);
+	bool SYN = (rcv_tcph_h.syn_flag == 1);
+	bool ACK = (rcv_tcph_h.ack_flag == 1);
+	bool FIN = (rcv_tcph_h.fin_flag == 1);
+	size_t rcv_payload_size = packet->getSize() - (14+20+20);
 
 	Socket *socket = this->find_socket(
 		rcv_iph_h.source_ip,
@@ -763,12 +765,177 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 		return;
 	}
 
+	socket->rwnd = rcv_tcph_h.window_size;
+
+	//receive normal segment
+	if(rcv_payload_size > 0){
+		bool in_order = socket->next_receive == (uint32_t)rcv_tcph_h.seq_num;
+		bool out_of_order = (socket->next_receive < (uint32_t)rcv_tcph_h.seq_num
+			&& (uint32_t)rcv_tcph_h.seq_num < socket->next_receive + Socket::BUFFER_SIZE);
+		bool can_write = (socket->recv_buf_data_length() + rcv_payload_size <= Socket::BUFFER_SIZE);
+		//write to buffer if possible (must not write segment partially)
+		if(in_order && can_write){
+			void * buf = malloc(rcv_payload_size);
+			packet->readData(14+20+20, buf, rcv_payload_size);
+			socket->recv_buf_write(buf, socket->next_receive, socket->next_receive+rcv_payload_size-1);
+			free(buf);
+			socket->next_receive += rcv_payload_size;
+			while(true){
+				try{
+					uint32_t last_seq = socket->received_unordered_segments.at(socket->next_receive);
+					socket->received_unordered_segments.erase(socket->next_receive);
+					socket->next_receive = last_seq + 1;
+				}
+				catch(const std::out_of_range& oor){
+					break;
+				}
+			}
+			if(socket->blocked_for_read){
+				socket->blocked_for_read = false;
+				this->returnSystemCall(socket->syscallUUID, socket->return_num);		
+			}
+		}
+		else if(out_of_order && can_write){
+			void * buf = malloc(rcv_payload_size);
+			packet->readData(14+20+20, buf, rcv_payload_size);
+			socket->recv_buf_write(buf, rcv_tcph_h.seq_num, rcv_tcph_h.seq_num+rcv_payload_size-1);
+			free(buf);
+			try{
+				socket->received_unordered_segments.at(rcv_tcph_h.seq_num);
+			}
+			catch(const std::out_of_range& oor){
+				socket->received_unordered_segments.insert({rcv_tcph_h.seq_num, (uint32_t)(rcv_tcph_h.seq_num + rcv_payload_size - 1)});
+			}
+
+			if(socket->blocked_for_read){
+				socket->blocked_for_read = false;
+				this->returnSystemCall(socket->syscallUUID, socket->return_num);		
+			}				
+		}
+		send_ACK(socket);
+	}
+
+	if(FIN){
+		//assume that FIN is always in order
+		//socket->next_receive++;
+		socket->closed_by_peer = true;
+		if(socket->blocked_for_read){
+			socket->blocked_for_read = false;
+			this->returnSystemCall(socket->syscallUUID, socket->return_num);	
+		}
+		send_ACK(socket);
+		//do this when ACKing to FIN
+		if(socket->state == TCPState::ESTABLISHED){
+			//passive close
+			socket->state = TCPState::CLOSE_WAIT;
+		}
+		if(socket->state == TCPState::FIN_WAIT_1){
+			//simultaneous close
+			socket->state = TCPState::CLOSING;
+		}
+		if(socket->state == TCPState::FIN_WAIT_2){
+			//TODO: go to time wait
+			//for now, remove socket
+			//socket->state = TCPState::TIME_WAIT;
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+		}
+	}
+	bool isFINsACK = socket->closed_by_user && (socket->FIN_seq_num+1 == rcv_tcph_h.ack_num);
+	//receive normal segment's ACK
+	if(ACK){
+		//printf("get ack:%u seq:%u\n", rcv_tcph_h.ack_num,rcv_tcph_h.seq_num);
+	}
+	if(SYN && ACK){
+		//printf("is synack\n");
+	}
+	if(ACK && (
+		socket->state == TCPState::ESTABLISHED 
+		||socket->state == TCPState::CLOSE_WAIT
+		||socket->state == TCPState::FIN_WAIT_1
+		||socket->state == TCPState::CLOSING)){
+		if(is_duplicate_ACK(socket, rcv_tcph_h.ack_num)){
+			if(socket->congestion_state == CongestionState::FAST_RECOVERY){
+				socket->cwnd += MSS;
+				//printf("is dup ack!\n");
+				send_maximum(socket);		
+			}
+			else{
+				socket->dupACKcount++;
+				if(socket->dupACKcount == 3){
+					socket->ssthresh = socket->cwnd/2;
+					socket->cwnd = socket->ssthresh + 3*MSS;
+					retransmit_unACKed_packets(socket);
+					socket->congestion_state = CongestionState::FAST_RECOVERY;
+				}
+			}
+		}
+		else if(!socket->sent_unACKed_segments.empty()){
+			//new ACK
+			//printf("is new ack\n");
+			uint32_t old_send_base = socket->send_base;
+			socket->update_send_base(rcv_tcph_h.ack_num);
+			if(old_send_base != socket->send_base && socket->timer_currently_running){
+				cancelTimer(socket->timer_UUID);
+				if(!socket->sent_unACKed_segments.empty()){
+					//printf("update timer\n");
+					socket->timer_UUID = addTimer((void *)socket, socket->RTO);
+				}
+				else{
+					//printf("stop timer\n");
+					socket->timer_currently_running = false;
+				}
+			}
+
+			calculate_RTO(socket, rcv_tcph_h.ack_num);
+
+			socket->dupACKcount = 0;
+			if(socket->congestion_state == CongestionState::SLOW_START){
+				socket->cwnd += MSS;
+				if(socket->cwnd >= socket->ssthresh){
+					socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
+				}
+			}
+			else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
+				socket->cwnd = socket->ssthresh;
+				socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
+			}
+			else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
+				socket->cwnd += MSS * MSS / socket->cwnd;
+			}
+
+			if(socket->blocked_for_write){
+				socket->blocked_for_write = false;
+				this->returnSystemCall(socket->syscallUUID, socket->return_num);
+			}
+			if(!isFINsACK){
+				send_maximum(socket);
+			}
+		}
+	}
+
+	//check ACK for FIN
+	if(ACK && socket->closed_by_user && rcv_tcph_h.ack_num == socket->FIN_seq_num+1){
+		if(socket->state == TCPState::FIN_WAIT_1){
+			socket->state = TCPState::FIN_WAIT_2;
+		}
+		if(socket->state == TCPState::CLOSING){
+			//TODO: go to time wait
+			//for now, remove socket
+			//socket->state = TCPState::TIME_WAIT;
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+		}
+		if(socket->state == TCPState::LAST_ACK){
+			this->removeFileDescriptor(socket->pid, socket->sockfd);
+			tcp_context.erase({socket->pid, socket->sockfd});
+		}
+	}
+
 	//3-way handshaking
 	if(socket->state == TCPState::LISTEN || socket->state == TCPState::SYN_SENT){
 		handle_handshake(socket, rcv_iph_h, rcv_tcph_h);
 	}
-
-
 
 	freePacket(packet);
 }
@@ -894,7 +1061,7 @@ void TCPAssignment::timerCallback(void* payload)
 	else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 		socket->congestion_state = CongestionState::SLOW_START;
 	}
-	//printf("TO!");
+	//printf("TO!:sb:%u\n", socket->send_base);
 	retransmit_unACKed_packets(socket);
 	
 }
@@ -1075,6 +1242,7 @@ void Socket::update_send_base(uint32_t ack_num){
 			printf("update_send_base: no sent&unACKed segment corresponding to recieved ACK#\n");
 		}
 	}
+	//printf("updatesb:%u\n", this->send_base);
 }
 
 
@@ -1161,6 +1329,7 @@ int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
 //send seq# st ~ seq# ed
 void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 
+	//printf("send data packet: %u ~ %u\n", st, ed);
 	struct ip_header iph_n = {0};
 	struct ip_header iph_h = {0};
 	struct tcp_header tcph_n = {0};
@@ -1172,7 +1341,12 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
 
 	tcph_h.seq_num = st;
-	tcph_h.ack_num = socket->next_receive;
+	if(socket->closed_by_peer){
+		tcph_h.ack_num = socket->next_receive + 1;
+	}
+	else{
+		tcph_h.ack_num = socket->next_receive;
+	}	
 	tcph_h.ack_flag = 1;
 
 
@@ -1209,7 +1383,12 @@ void TCPAssignment::send_ACK(Socket * socket){
 	tcph_h.dest_port = this->get_sockaddr_port(&(socket->peer_addr));
 
 	tcph_h.seq_num = socket->next_seq_num;
-	tcph_h.ack_num = socket->next_receive;
+	if(socket->closed_by_peer){
+		tcph_h.ack_num = socket->next_receive + 1;
+	}
+	else{
+		tcph_h.ack_num = socket->next_receive;
+	}
 	tcph_h.ack_flag = 1;
 
 	this->hton_ip_header(&iph_h, &iph_n);
@@ -1247,7 +1426,7 @@ void TCPAssignment::send_SYNACK(Socket * socket, struct syn_client * new_sc, uin
 }
 
 void TCPAssignment::send_FIN(Socket * socket){
-	//printf("send FIN!");
+	//printf("send FIN#:%u\n",socket->FIN_seq_num);
 	struct ip_header iph_n = {0};
 	struct ip_header iph_h = {0};
 	struct tcp_header tcph_n = {0};
@@ -1286,6 +1465,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 			break;
 		}
 		if(!socket->timer_currently_running){
+			//printf("addTimer!");
 			socket->timer_UUID = addTimer((void *)socket, socket->RTO);
 			socket->timer_currently_running = true;
 		}
@@ -1295,6 +1475,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 		if(segment_size > 0){
 			send_data_packet(socket, st, ed);
 			socket->next_seq_num += segment_size;
+			//printf("send_maximum:insert seg:{%u~%u}\n", st, ed);
 			socket->sent_unACKed_segments.insert({st, ed});
 			ret += segment_size;
 		}
@@ -1303,6 +1484,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 		}
 	}
 	if(socket->closed_by_user && socket->next_seq_num == socket->FIN_seq_num){
+		//printf("send_maximum: send fin\n");
 		send_FIN(socket);
 		socket->next_seq_num++;
 		socket->sent_unACKed_segments.insert({socket->FIN_seq_num,socket->FIN_seq_num});
@@ -1314,6 +1496,9 @@ int TCPAssignment::send_maximum(Socket * socket){
 			socket->state = TCPState::LAST_ACK;
 		}
 	}
+	//printf("send maximum: sent %d\n", ret);
+	//printf("nsn:%u ", socket->next_seq_num);
+	//printf("nw:%u\n", socket->next_write);
 	return ret;
 }
 
@@ -1344,6 +1529,7 @@ void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
 	else{
 		uint32_t ed = socket->sent_unACKed_segments.at(socket->send_base);
 		if(socket->closed_by_user && socket->send_base == socket->FIN_seq_num){
+			//printf("FIN seq num:%u\n", socket->FIN_seq_num);
 			send_FIN(socket);
 		}
 		else{
