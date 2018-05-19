@@ -66,8 +66,6 @@ public:
 	struct sockaddr addr;
 	socklen_t addrlen;	
 	int is_bound;
-	uint32_t ack_num; // expected sequence number for this socket to receive
-	uint32_t seq_num; // next sequence number to send
 	int syscallUUID;
 	int backlog;
 	int pid;
@@ -116,6 +114,7 @@ public:
 	Time RTO;
 
 	uint32_t cwnd;
+	uint32_t rwnd;
 
 	bool timer_currently_running;
 	UUID timer_UUID;
@@ -142,7 +141,6 @@ struct syn_client{
 	short port;
 	uint32_t ack_num;
 	uint32_t seq_num;
-
 };
 
 struct ip_header{
@@ -199,7 +197,8 @@ private:
 	int send_maximum(Socket * socket);
 	void send_ACK(Socket * socket);
 	void send_FIN(Socket * socket);
-
+	void handle_handshake(Socket * socket, struct ip_header iph, struct tcp_header tcph);
+	void send_SYNACK(Socket * socket, struct syn_client * new_sc, uint32_t my_ip, uint16_t my_port);
 
 	virtual void timerCallback(void* payload) final;
 
@@ -246,6 +245,7 @@ protected:
 	void calculate_RTO(Socket *socket, uint32_t ACK_num);
 	void retransmit_unACKed_packets(Socket *socket);
 	bool is_duplicate_ACK(Socket * socket, uint32_t ACK_num);
+
 };
 
 class TCPAssignmentProvider
