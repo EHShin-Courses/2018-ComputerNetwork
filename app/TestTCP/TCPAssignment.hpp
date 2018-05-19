@@ -115,6 +115,8 @@ public:
 	uint32_t cwnd;
 	uint32_t rwnd;
 
+	uint32_t my_rwnd;
+
 	bool timer_currently_running;
 	UUID timer_UUID;
 
@@ -237,7 +239,7 @@ protected:
 	void ntoh_tcp_header(struct tcp_header *n, struct tcp_header *h);
 	void hton_tcp_header(struct tcp_header *n, struct tcp_header *h);
 
-	void set_common_tcp_fields(Packet *packet);
+	void set_common_tcp_fields(Packet *packet, Socket * socket);
 
 	int get_sockaddr_ip(const struct sockaddr *addr);
 	short get_sockaddr_port(const struct sockaddr *addr);

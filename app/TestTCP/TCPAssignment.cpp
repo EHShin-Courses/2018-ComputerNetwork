@@ -71,6 +71,7 @@ sent_unACKed_segments(), received_unordered_segments()
 	this->closed_by_peer = false;
 
 	this->rwnd = BUFFER_SIZE;
+	this->my_rwnd = BUFFER_SIZE;
 }
 
 Socket::~Socket()
@@ -223,7 +224,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd, const
 
 	Packet *send_packet = this->allocatePacket(14+20+20);
 	this->write_headers(send_packet, &iph_n, &tcph_n);
-	this->set_common_tcp_fields(send_packet);
+	this->set_common_tcp_fields(send_packet, client_socket);
 	this->sendPacket("IPv4", send_packet);
 
 	client_socket->syscallUUID = syscallUUID; //timeout or SYNACK unblocks connect();
@@ -289,8 +290,9 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 	uint32_t st, ed;
 	Socket *socket = tcp_context.at({pid, fd});
 	num_write = std::min({socket->send_buf_free_length(), (int)count});
-
-
+	if(socket->next_write%51200 == 0){
+		//printf("[%d] nw:%u\n",pid, socket->next_write);
+	}
 	if(num_write != 0){ // there is free buffer space
 		st = socket->next_write;
 		ed = socket->next_write + num_write - 1;
@@ -1049,6 +1051,9 @@ void TCPAssignment::handle_handshake(Socket * socket, struct ip_header iph, stru
 void TCPAssignment::timerCallback(void* payload)
 {
 	Socket *socket = (Socket *)payload;
+	//printf("TO:RTO:%u\n", TimeUtil::getTime(socket->RTO, TimeUtil::MSEC));
+	//printf("  RTT:%u\n", TimeUtil::getTime(socket->RTT, TimeUtil::MSEC));
+	//printf("  RTTVAR:%u\n", TimeUtil::getTime(socket->RTTVAR, TimeUtil::MSEC));
 	socket->timer_currently_running = false;
 	socket->ssthresh = socket->cwnd/2;
 	socket->cwnd = TCPAssignment::MSS;
@@ -1115,7 +1120,7 @@ Socket *TCPAssignment::find_socket(int src_ip, short src_port, int dst_ip, short
 }
 
 
-void TCPAssignment::set_common_tcp_fields(Packet *packet){
+void TCPAssignment::set_common_tcp_fields(Packet *packet, Socket * socket){
 
 	int packet_size = packet->getSize();
 	int tcp_ofs = 14+20;
@@ -1128,7 +1133,7 @@ void TCPAssignment::set_common_tcp_fields(Packet *packet){
 
 	// write everything except checksum
 	tcph_n.hlen = 20/4;
-	tcph_n.window_size = htons(Socket::BUFFER_SIZE); //TODO: change rwnd dynamically? no?
+	tcph_n.window_size = htons(socket->my_rwnd); //TODO: change rwnd dynamically? no?
 	this->write_headers(packet, &iph_n, &tcph_n);
 
 	// TCP checksum
@@ -1357,6 +1362,11 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 		socket->RTT_wating_ACK_num = ed + 1;
 	}
 
+
+	//DB DEBUG JUST FOR DEBUGGING!!!
+	//printf("send data!");
+	socket->my_rwnd = socket->cwnd;
+
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
 
@@ -1366,7 +1376,7 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 	Packet *send_packet = this->allocatePacket(14 + 20 + 20 + new_payload_size);
 	this->write_headers(send_packet, &iph_n, &tcph_n);
 	send_packet->writeData(14 + 20 + 20, buf, new_payload_size);
-	this->set_common_tcp_fields(send_packet);
+	this->set_common_tcp_fields(send_packet, socket);
 
 	this->sendPacket("IPv4", send_packet);
 	free(buf);
@@ -1397,7 +1407,7 @@ void TCPAssignment::send_ACK(Socket * socket){
 
 	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
 	this->write_headers(send_packet, &iph_n, &tcph_n);
-	this->set_common_tcp_fields(send_packet);
+	this->set_common_tcp_fields(send_packet, socket);
 	this->sendPacket("IPv4", send_packet);
 }
 
@@ -1422,7 +1432,7 @@ void TCPAssignment::send_SYNACK(Socket * socket, struct syn_client * new_sc, uin
 
 	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
 	this->write_headers(send_packet, &iph_n, &tcph_n);
-	this->set_common_tcp_fields(send_packet);
+	this->set_common_tcp_fields(send_packet, socket);
 	this->sendPacket("IPv4", send_packet);	
 }
 
@@ -1447,7 +1457,7 @@ void TCPAssignment::send_FIN(Socket * socket){
 
 	Packet *send_packet = this->allocatePacket(14 + 20 + 20);
 	this->write_headers(send_packet, &iph_n, &tcph_n);
-	this->set_common_tcp_fields(send_packet);
+	this->set_common_tcp_fields(send_packet, socket);
 	this->sendPacket("IPv4", send_packet);
 }
 
@@ -1514,7 +1524,15 @@ void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
 		Time recv_time = this->getHost()->getSystem()->getCurrentTime();
 		Time sample_RTT = recv_time - socket->RTT_sent_time;
 		socket->RTT = socket->RTT - (socket->RTT >> 3) + (sample_RTT >> 3);
-		socket->RTTVAR = socket->RTTVAR - (socket->RTTVAR >> 2) + ((socket->RTT - sample_RTT) >> 2);
+		//printf("sampleRTT:%u\n", TimeUtil::getTime(sample_RTT, TimeUtil::MSEC));
+		Time diff;
+		if(socket->RTT >= sample_RTT){
+			diff = socket->RTT - sample_RTT;
+		}
+		else{
+			diff = sample_RTT - socket->RTT;
+		}
+		socket->RTTVAR = 3*socket->RTTVAR/4 + diff/4;
 		socket->RTO = socket->RTT + 4 * socket->RTTVAR;
 		socket->RTT_time_calculating = false;
 	}
