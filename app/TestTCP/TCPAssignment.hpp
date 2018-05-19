@@ -123,7 +123,7 @@ public:
 
 	bool closed_by_user;
 	bool closed_by_peer;
-	
+
 
 public:
 	Socket(int pid, int fd, TCPState state);
@@ -200,6 +200,7 @@ private:
 	void send_FIN(Socket * socket);
 	void handle_handshake(Socket * socket, struct ip_header iph, struct tcp_header tcph);
 	void send_SYNACK(Socket * socket, struct syn_client * new_sc, uint32_t my_ip, uint16_t my_port);
+	int roundUp(int numToRound, int multiple);
 
 	virtual void timerCallback(void* payload) final;
 

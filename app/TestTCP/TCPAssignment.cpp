@@ -767,6 +767,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 
 	socket->rwnd = rcv_tcph_h.window_size;
 
+	//printf("cwnd:%d\n",socket->cwnd);
+
 	//receive normal segment
 	if(rcv_payload_size > 0){
 		bool in_order = socket->next_receive == (uint32_t)rcv_tcph_h.seq_num;
@@ -1245,7 +1247,6 @@ void Socket::update_send_base(uint32_t ack_num){
 	//printf("updatesb:%u\n", this->send_base);
 }
 
-
 int Socket::send_buf_free_length(){
 	// |....[sb]DDDD[nw].....|
 	// |DDDD[nw]....[sb]DDDDD|
@@ -1452,15 +1453,17 @@ void TCPAssignment::send_FIN(Socket * socket){
 
 //first transmission of maximum possible amount of data
 int TCPAssignment::send_maximum(Socket * socket){
+	//printf("send max\n");
 	uint32_t st, ed;
 	int segment_size;
-
+	uint32_t window_size = std::max({std::min({socket->cwnd, socket->rwnd}), (uint32_t)MSS});
+	window_size = roundUp(window_size, MSS);
 	int ret = 0;
 	while(true){
 		if(socket->next_seq_num == socket->next_write){
 			break;
 		}
-		if(socket->next_seq_num - socket->send_base >= std::min({socket->cwnd, socket->rwnd})){
+		if(socket->next_seq_num - socket->send_base >= window_size){
 			// limit # of sent but unACKed bytes to congestion window
 			break;
 		}
@@ -1470,7 +1473,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 			socket->timer_currently_running = true;
 		}
 		st = socket->next_seq_num;
-		segment_size = std::min({(int)(socket->next_write - st), MSS, (int)(socket->cwnd -(socket->next_seq_num - socket->send_base))});
+		segment_size = std::min({(int)(socket->next_write - st), MSS, (int)(window_size -(socket->next_seq_num - socket->send_base))});
 		ed = st + segment_size - 1;
 		if(segment_size > 0){
 			send_data_packet(socket, st, ed);
@@ -1499,6 +1502,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 	//printf("send maximum: sent %d\n", ret);
 	//printf("nsn:%u ", socket->next_seq_num);
 	//printf("nw:%u\n", socket->next_write);
+	//printf("ret:%d", ret);
 	return ret;
 }
 
@@ -1555,6 +1559,18 @@ bool TCPAssignment::is_duplicate_ACK(Socket * socket, uint32_t ACK_num){
 	else{
 		return false;
 	}
+}
+
+int TCPAssignment::roundUp(int numToRound, int multiple)
+{
+    if (multiple == 0)
+        return numToRound;
+
+    int remainder = numToRound % multiple;
+    if (remainder == 0)
+        return numToRound;
+
+    return numToRound + multiple - remainder;
 }
 
 }
