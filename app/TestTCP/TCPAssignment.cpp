@@ -496,14 +496,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 			//	socket->send_base = rcv_tcph_h.ack_num;
 			//}
 			bool valid_ack; //Check that ACK is for some unacked but sent byte
-			bool is_duplicate_ACK = false;
-			if(rcv_tcph_h.ack_num != socket->next_seq_num){
-				std::unordered_map<uint32_t, uint32_t>::iterator it = socket->sent_unACKed_segments.find(rcv_tcph_h.ack_num);
-				if(it == socket->sent_unACKed_segments.end()){
-					is_duplicate_ACK = true;			
-				}
-			}
-			if(is_duplicate_ACK){
+
+			if(is_duplicate_ACK(socket, rcv_tcph_h.ack_num)){
 				printf("duplicate\n");
 				if(socket->congestion_state == CongestionState::FAST_RECOVERY){
 					socket->cwnd += TCPAssignment::MSS;
@@ -1200,6 +1194,23 @@ void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
 		}
 		socket->timer_UUID = addTimer((void *)socket, socket->RTO);
 		socket->timer_currently_running = true;
+	}
+}
+
+bool TCPAssignment::is_duplicate_ACK(Socket * socket, uint32_t ACK_num){
+	if(socket->next_seq_num == ACK_num){
+		return false;
+	}
+	if(socket->send_base == ACK_num){
+		return true;
+	}
+
+	std::unordered_map<uint32_t, uint32_t>::iterator it = socket->sent_unACKed_segments.find(ACK_num);
+	if(it == socket->sent_unACKed_segments.end()){
+		return true;
+	}
+	else{
+		return false;
 	}
 }
 

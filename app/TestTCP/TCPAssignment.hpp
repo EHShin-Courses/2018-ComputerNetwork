@@ -245,7 +245,7 @@ protected:
 	void set_sockaddr_family(struct sockaddr *addr);
 	void calculate_RTO(Socket *socket, uint32_t ACK_num);
 	void retransmit_unACKed_packets(Socket *socket);
-
+	bool is_duplicate_ACK(Socket * socket, uint32_t ACK_num);
 };
 
 class TCPAssignmentProvider
