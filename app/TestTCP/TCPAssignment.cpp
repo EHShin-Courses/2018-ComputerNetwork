@@ -290,9 +290,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int fd, void *buf, 
 	uint32_t st, ed;
 	Socket *socket = tcp_context.at({pid, fd});
 	num_write = std::min({socket->send_buf_free_length(), (int)count});
-	if(socket->next_write%51200 == 0){
-		//printf("[%d] nw:%u\n",pid, socket->next_write);
-	}
+
 	if(num_write != 0){ // there is free buffer space
 		st = socket->next_write;
 		ed = socket->next_write + num_write - 1;
@@ -376,369 +374,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	}
 }
 
-/*
-void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
-{
-	struct ip_header rcv_iph_n = {0};
-	struct ip_header rcv_iph_h = {0};
-	struct tcp_header rcv_tcph_n = {0};
-	struct tcp_header rcv_tcph_h = {0};
-
-	struct ip_header new_iph_n = {0};
-	struct ip_header new_iph_h = {0};
-	struct tcp_header new_tcph_n = {0};
-	struct tcp_header new_tcph_h = {0};
-	int new_payload_size = -1; // -1: no send
-	uint8_t* new_payload_buf = NULL;
-	size_t rcv_payload_size = packet->getSize() - (14+20+20);
-
-	// read packet
-	this->read_headers(packet, &rcv_iph_n, &rcv_tcph_n);
-
-	// TODO: checksum
-
-	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
-	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
-	bool SYN = (rcv_tcph_h.syn_flag == 1);
-	bool ACK = (rcv_tcph_h.ack_flag == 1);
-	bool FIN = (rcv_tcph_h.fin_flag == 1);
-
-	Socket *socket = this->find_socket(
-		rcv_iph_h.source_ip,
-		rcv_tcph_h.source_port,
-		rcv_iph_h.dest_ip,
-		rcv_tcph_h.dest_port
-	);
-	if(socket == NULL){
-		//No socket to handle packet
-		freePacket(packet);
-		return;
-	}
-
-	//basic fields for answering
-	new_tcph_h.source_port = rcv_tcph_h.dest_port;
-	new_tcph_h.dest_port = rcv_tcph_h.source_port;
-	new_iph_h.source_ip = rcv_iph_h.dest_ip;
-	new_iph_h.dest_ip = rcv_iph_h.source_ip;
-
-	socket->rwnd = rcv_tcph_h.window_size;
-
-	// DATA TRANSFER
-	if(rcv_payload_size > 0){
-		//check window
-		bool in_order = socket->next_receive == (uint32_t)rcv_tcph_h.seq_num;
-		bool duplicate = false;
-		bool out_of_order = (socket->next_receive < (uint32_t)rcv_tcph_h.seq_num && (uint32_t)rcv_tcph_h.seq_num < socket->next_receive + Socket::BUFFER_SIZE);
-		if(in_order){
-			//write to buffer if possible (must not write segment partially)
-
-			bool can_write = (socket->recv_buf_data_length() + rcv_payload_size <= Socket::BUFFER_SIZE);
-			if(can_write){
-				void * buf = malloc(rcv_payload_size);
-				packet->readData(14+20+20, buf, rcv_payload_size);
-				socket->recv_buf_write(buf, socket->next_receive, socket->next_receive+rcv_payload_size-1);
-				free(buf);
-				socket->next_receive += rcv_payload_size;
-				while(true){
-					try{
-						uint32_t last_seq = socket->received_unordered_segments.at(socket->next_receive);
-						socket->received_unordered_segments.erase(socket->next_receive);
-						socket->next_receive = last_seq + 1;
-					}
-					catch(const std::out_of_range& oor){
-						break;
-					}
-				}
-				if(socket->blocked_for_read){
-					socket->blocked_for_read = false;
-					this->returnSystemCall(socket->syscallUUID, socket->return_num);		
-				}
-			}
-			//send ACK <- TODO: or wait?
-		}
-		else if(duplicate){
-			//send ACK (again)
-		}
-		else if(out_of_order){
-			//write to buffer if possible (must not write segment partially)
-			//send (dup) ACK
-			bool can_write = (socket->recv_buf_data_length() + rcv_payload_size <= Socket::BUFFER_SIZE);
-			if(can_write){
-				void * buf = malloc(rcv_payload_size);
-				packet->readData(14+20+20, buf, rcv_payload_size);
-				socket->recv_buf_write(buf, rcv_tcph_h.seq_num, rcv_tcph_h.seq_num+rcv_payload_size-1);
-				free(buf);
-				try{
-					socket->received_unordered_segments.at(rcv_tcph_h.seq_num);
-				}
-				catch(const std::out_of_range& oor){
-					socket->received_unordered_segments.insert({rcv_tcph_h.seq_num, (uint32_t)(rcv_tcph_h.seq_num + rcv_payload_size - 1)});
-				}
-
-				if(socket->blocked_for_read){
-					socket->blocked_for_read = false;
-					this->returnSystemCall(socket->syscallUUID, socket->return_num);		
-				}				
-			}
-		}
-		send_ACK(socket);
-
-	}
-	if(ACK){
-		if(socket->state == TCPState::ESTABLISHED || socket->state == TCPState::CLOSE_WAIT){
-			//check window, duplicate acks etc
-			
-			//if((int)socket->send_base < (int)rcv_tcph_h.ack_num){
-			//	socket->send_base = rcv_tcph_h.ack_num;
-			//}
-			bool valid_ack; //Check that ACK is for some unacked but sent byte
-
-			if(is_duplicate_ACK(socket, rcv_tcph_h.ack_num)){
-				//printf("duplicate\n");
-				if(socket->congestion_state == CongestionState::FAST_RECOVERY){
-					socket->cwnd += TCPAssignment::MSS;
-					send_maximum(socket);					
-				}
-				else{
-					socket->dupACKcount++;
-					if(socket->dupACKcount == 3){
-						socket->ssthresh = socket->cwnd/2;
-						socket->cwnd = socket->ssthresh + 3*MSS;
-						//printf("retransmit due to dupACK\n");
-						retransmit_unACKed_packets(socket);
-						socket->congestion_state = CongestionState::FAST_RECOVERY;
-					}
-				}
-			}
-			if(socket->send_base <= socket->next_seq_num){
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num) && (rcv_tcph_h.ack_num <= socket->next_seq_num);
-			}
-			else{
-				valid_ack = (socket->send_base < rcv_tcph_h.ack_num) || (rcv_tcph_h.ack_num <= socket->next_seq_num);
-			}
-			if(valid_ack){
-				socket->dupACKcount = 0;
-
-				uint32_t old_send_base = socket->send_base;
-				socket->update_send_base(rcv_tcph_h.ack_num);
-				if(old_send_base != socket->send_base && socket->timer_currently_running){
-					//printf("cancel timer!");
-					cancelTimer(socket->timer_UUID);
-					if(!socket->sent_unACKed_segments.empty()){
-						socket->timer_UUID = addTimer((void *)socket, socket->RTO);
-					}
-
-					else{
-						socket->timer_currently_running = false;
-					}
-				}
-
-				calculate_RTO(socket, rcv_tcph_h.ack_num);
-
-				if(socket->congestion_state == CongestionState::SLOW_START){
-					socket->cwnd += TCPAssignment::MSS;
-					if(socket->cwnd >= socket->ssthresh){
-						socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
-					}
-				}
-				else if(socket->congestion_state == CongestionState::FAST_RECOVERY){
-					socket->cwnd = socket->ssthresh;
-					socket->congestion_state = CongestionState::CONGESTION_AVOIDANCE;
-				}
-				else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
-					socket->cwnd += TCPAssignment::MSS * TCPAssignment::MSS / socket->cwnd;
-				}
-
-			}
-			if(socket->blocked_for_write){
-				//wake write()
-				socket->blocked_for_write = false;
-				this->returnSystemCall(socket->syscallUUID, socket->return_num);
-			}
-
-			send_maximum(socket);
-		}
-	}
-
-
-
-	// 3-way handshaking
-	if(SYN && !ACK && socket->state == TCPState::LISTEN){
-		//server received SYN
-		if(socket->syn_clients.size() < (size_t)(socket->backlog)){
-			//socket->state = TCPState::SYNRCVD is omitted
-
-			//remember approaching client
-
-			this->confirm_syn_client(
-			socket,
-			rcv_iph_h.source_ip,
-			rcv_tcph_h.source_port,
-			rcv_tcph_h.ack_num,
-			rcv_tcph_h.seq_num
-			);
-
-			struct syn_client new_sc = {
-				rcv_iph_h.source_ip,
-				rcv_tcph_h.source_port,
-				rcv_tcph_h.seq_num + 1,
-				0
-			};
-			//set SYNACK fields
-			new_payload_size = 0;
-			new_tcph_h.syn_flag = 1;
-			new_tcph_h.ack_flag = 1;
-			new_tcph_h.ack_num = new_sc.ack_num;
-			new_tcph_h.seq_num = new_sc.seq_num++;//update before push_back
-
-			socket->syn_clients.push_back(new_sc);
-		}
-		else{
-			//backlog full, ignore.
-		}
-	}
-	if(SYN && ACK && socket->state == TCPState::SYN_SENT){
-		//client recieved SYNACK
-		if(socket->seq_num == rcv_tcph_h.ack_num){
-			//set ACK fields
-			new_payload_size = 0;
-			new_tcph_h.ack_flag = 1;
-			socket->ack_num = rcv_tcph_h.seq_num + 1;
-			new_tcph_h.ack_num = socket->ack_num;
-			new_tcph_h.seq_num = socket->seq_num++;
-
-			//set Socket fields
-			socket->state = TCPState::ESTABLISHED;
-			socket->next_seq_num = rcv_tcph_h.ack_num;
-			socket->send_base = rcv_tcph_h.ack_num;
-			socket->next_write = rcv_tcph_h.ack_num;
-			socket->next_receive = rcv_tcph_h.seq_num + 1;
-			socket->next_read = rcv_tcph_h.seq_num + 1;
-
-			//return from connect()
-			this->returnSystemCall(socket->syscallUUID, 0);
-		}
-		else{
-			//wrong ACK#. ignore
-		}
-	}
-	if(!SYN && ACK && socket->state == TCPState::LISTEN){
-		bool sc_ok = this->confirm_syn_client(
-			socket,
-			rcv_iph_h.source_ip,
-			rcv_tcph_h.source_port,
-			rcv_tcph_h.ack_num,
-			rcv_tcph_h.seq_num
-		);
-		if(sc_ok){
-			//server got ACK, establishes connection
-			//conceptually, TCP state condition is SYN_RCVD
-			//but let it as LISTEN b/c we lazily allocate Socket
-			//i.e. when connection is confirmed
-
-			int fd = this->createFileDescriptor(socket->pid);
-			Socket *new_socket = new Socket(socket->pid, fd, TCPState::ESTABLISHED);
-
-			new_socket->seq_num = rcv_tcph_h.ack_num;
-			new_socket->ack_num = rcv_tcph_h.seq_num;
-
-			new_socket->send_buffer = (uint8_t *)malloc(Socket::BUFFER_SIZE);
-			new_socket->receive_buffer = (uint8_t *)malloc(Socket::BUFFER_SIZE);
-			set_sockaddr_ip(&(new_socket->addr), rcv_iph_h.dest_ip);
-			set_sockaddr_port(&(new_socket->addr), rcv_tcph_h.dest_port);
-			set_sockaddr_family(&(new_socket->addr));
-			set_sockaddr_ip(&(new_socket->peer_addr), rcv_iph_h.source_ip);
-			set_sockaddr_port(&(new_socket->peer_addr), rcv_tcph_h.source_port);
-			set_sockaddr_family(&(new_socket->peer_addr));
-
-
-			// TODO : initialize send/receive seq_num
-			new_socket->next_seq_num = rcv_tcph_h.ack_num;
-			new_socket->send_base = rcv_tcph_h.ack_num;
-			new_socket->next_write = rcv_tcph_h.ack_num;
-
-			// Don't know if right or not
-			new_socket->next_receive = rcv_tcph_h.seq_num;
-			new_socket->next_read = rcv_tcph_h.seq_num;
-
-			tcp_context.insert({{new_socket->pid, fd}, new_socket});
-
-			if(socket->accept_list.empty()){
-				socket->establish_list.push_back({new_socket->pid, fd});
-			}
-			else{
-				std::pair<int, struct sockaddr *> accept_pair = (socket->accept_list).back();
-				(socket->accept_list).pop_back();
-				memcpy(accept_pair.second, &(new_socket->peer_addr), sizeof(struct sockaddr));
-				returnSystemCall(accept_pair.first, fd);
-			}
-			//TODO: may contain payload?
-		}
-	}
-
-	// 4-way close
-	if(FIN){
-		//TODO: replace seq_num, ack_num with congestion control seq# variables
-		//send ACK for FIN
-		//TODO: what abt pkt loss gap? (cumulative ack)???
-		new_payload_size = 0;
-		new_tcph_h.ack_flag = 1;
-		socket->ack_num = rcv_tcph_h.seq_num + 1;
-		new_tcph_h.ack_num = socket->ack_num;		
-		new_tcph_h.seq_num = socket->seq_num;
-			// do not increase : no FINACK's response
-
-		if(socket->state == TCPState::ESTABLISHED){
-			//passive close
-			socket->state = TCPState::CLOSE_WAIT;
-		}
-		if(socket->state == TCPState::FIN_WAIT_1){
-			//simultaneous close
-			socket->state = TCPState::CLOSING;
-		}
-		if(socket->state == TCPState::FIN_WAIT_2){
-			//TODO: go to time wait
-			//for now, remove socket
-			//socket->state = TCPState::TIME_WAIT;
-			this->removeFileDescriptor(socket->pid, socket->sockfd);
-			tcp_context.erase({socket->pid, socket->sockfd});
-		}
-	}
-	if(ACK){ // NOT "else if" : (FIN_WAIT_1-(CLOSING)->TIME_WAIT)
-
-		if(socket->state == TCPState::FIN_WAIT_1){
-			socket->state = TCPState::FIN_WAIT_2;
-		}
-		if(socket->state == TCPState::CLOSING){
-			//TODO: go to time wait
-			//for now, remove socket
-			//socket->state = TCPState::TIME_WAIT;
-			this->removeFileDescriptor(socket->pid, socket->sockfd);
-			tcp_context.erase({socket->pid, socket->sockfd});
-		}
-		if(socket->state == TCPState::LAST_ACK){
-			this->removeFileDescriptor(socket->pid, socket->sockfd);
-			tcp_context.erase({socket->pid, socket->sockfd});
-		}
-	}
-
-
-	if(new_payload_size != -1){
-		//send packet
-		this->hton_ip_header(&new_iph_h, &new_iph_n);
-		this->hton_tcp_header(&new_tcph_h, &new_tcph_n);
-		Packet * send_packet = this->allocatePacket(14+20+20+new_payload_size);
-		this->write_headers(send_packet, &new_iph_n, &new_tcph_n);
-		if(new_payload_size > 0){
-			send_packet->writeData(14+20+20, new_payload_buf, new_payload_size);
-		}
-		this->set_common_tcp_fields(send_packet);
-		this->sendPacket("IPv4", send_packet);
-	}
-
-	this->freePacket(packet);
-}
-*/
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 
@@ -750,7 +385,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 	this->ntoh_ip_header(&rcv_iph_n, &rcv_iph_h);
 	this->ntoh_tcp_header(&rcv_tcph_n, &rcv_tcph_h);
 
-	bool SYN = (rcv_tcph_h.syn_flag == 1);
+	//bool SYN = (rcv_tcph_h.syn_flag == 1);
 	bool ACK = (rcv_tcph_h.ack_flag == 1);
 	bool FIN = (rcv_tcph_h.fin_flag == 1);
 	size_t rcv_payload_size = packet->getSize() - (14+20+20);
@@ -768,8 +403,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 	}
 
 	socket->rwnd = rcv_tcph_h.window_size;
-
-	//printf("cwnd:%d\n",socket->cwnd);
 
 	//receive normal segment
 	if(rcv_payload_size > 0){
@@ -847,12 +480,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 	}
 	bool isFINsACK = socket->closed_by_user && (socket->FIN_seq_num+1 == rcv_tcph_h.ack_num);
 	//receive normal segment's ACK
-	if(ACK){
-		//printf("get ack:%u seq:%u\n", rcv_tcph_h.ack_num,rcv_tcph_h.seq_num);
-	}
-	if(SYN && ACK){
-		//printf("is synack\n");
-	}
+
 	if(ACK && (
 		socket->state == TCPState::ESTABLISHED 
 		||socket->state == TCPState::CLOSE_WAIT
@@ -861,7 +489,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 		if(is_duplicate_ACK(socket, rcv_tcph_h.ack_num)){
 			if(socket->congestion_state == CongestionState::FAST_RECOVERY){
 				socket->cwnd += MSS;
-				//printf("is dup ack!\n");
 				send_maximum(socket);		
 			}
 			else{
@@ -876,17 +503,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet){
 		}
 		else if(!socket->sent_unACKed_segments.empty()){
 			//new ACK
-			//printf("is new ack\n");
 			uint32_t old_send_base = socket->send_base;
 			socket->update_send_base(rcv_tcph_h.ack_num);
 			if(old_send_base != socket->send_base && socket->timer_currently_running){
 				cancelTimer(socket->timer_UUID);
 				if(!socket->sent_unACKed_segments.empty()){
-					//printf("update timer\n");
 					socket->timer_UUID = addTimer((void *)socket, socket->RTO);
 				}
 				else{
-					//printf("stop timer\n");
 					socket->timer_currently_running = false;
 				}
 			}
@@ -1051,9 +675,6 @@ void TCPAssignment::handle_handshake(Socket * socket, struct ip_header iph, stru
 void TCPAssignment::timerCallback(void* payload)
 {
 	Socket *socket = (Socket *)payload;
-	//printf("TO:RTO:%u\n", TimeUtil::getTime(socket->RTO, TimeUtil::MSEC));
-	//printf("  RTT:%u\n", TimeUtil::getTime(socket->RTT, TimeUtil::MSEC));
-	//printf("  RTTVAR:%u\n", TimeUtil::getTime(socket->RTTVAR, TimeUtil::MSEC));
 	socket->timer_currently_running = false;
 	socket->ssthresh = socket->cwnd/2;
 	socket->cwnd = TCPAssignment::MSS;
@@ -1068,7 +689,6 @@ void TCPAssignment::timerCallback(void* payload)
 	else if(socket->congestion_state == CongestionState::CONGESTION_AVOIDANCE){
 		socket->congestion_state = CongestionState::SLOW_START;
 	}
-	//printf("TO!:sb:%u\n", socket->send_base);
 	retransmit_unACKed_packets(socket);
 	
 }
@@ -1133,7 +753,7 @@ void TCPAssignment::set_common_tcp_fields(Packet *packet, Socket * socket){
 
 	// write everything except checksum
 	tcph_n.hlen = 20/4;
-	tcph_n.window_size = htons(socket->my_rwnd); //TODO: change rwnd dynamically? no?
+	tcph_n.window_size = htons(Socket::BUFFER_SIZE - socket->recv_buf_data_length());
 	this->write_headers(packet, &iph_n, &tcph_n);
 
 	// TCP checksum
@@ -1249,7 +869,6 @@ void Socket::update_send_base(uint32_t ack_num){
 			printf("update_send_base: no sent&unACKed segment corresponding to recieved ACK#\n");
 		}
 	}
-	//printf("updatesb:%u\n", this->send_base);
 }
 
 int Socket::send_buf_free_length(){
@@ -1335,7 +954,6 @@ int Socket::recv_buf_read(void * buf, uint32_t st, uint32_t ed){
 //send seq# st ~ seq# ed
 void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 
-	//printf("send data packet: %u ~ %u\n", st, ed);
 	struct ip_header iph_n = {0};
 	struct ip_header iph_h = {0};
 	struct tcp_header tcph_n = {0};
@@ -1361,11 +979,6 @@ void TCPAssignment::send_data_packet(Socket * socket, uint32_t st, uint32_t ed){
 		socket->RTT_sent_time = this->getHost()->getSystem()->getCurrentTime();
 		socket->RTT_wating_ACK_num = ed + 1;
 	}
-
-
-	//DB DEBUG JUST FOR DEBUGGING!!!
-	//printf("send data!");
-	socket->my_rwnd = socket->cwnd;
 
 	this->hton_ip_header(&iph_h, &iph_n);
 	this->hton_tcp_header(&tcph_h, &tcph_n);
@@ -1437,7 +1050,7 @@ void TCPAssignment::send_SYNACK(Socket * socket, struct syn_client * new_sc, uin
 }
 
 void TCPAssignment::send_FIN(Socket * socket){
-	//printf("send FIN#:%u\n",socket->FIN_seq_num);
+
 	struct ip_header iph_n = {0};
 	struct ip_header iph_h = {0};
 	struct tcp_header tcph_n = {0};
@@ -1463,7 +1076,6 @@ void TCPAssignment::send_FIN(Socket * socket){
 
 //first transmission of maximum possible amount of data
 int TCPAssignment::send_maximum(Socket * socket){
-	//printf("send max\n");
 	uint32_t st, ed;
 	int segment_size;
 	uint32_t window_size = std::max({std::min({socket->cwnd, socket->rwnd}), (uint32_t)MSS});
@@ -1478,7 +1090,6 @@ int TCPAssignment::send_maximum(Socket * socket){
 			break;
 		}
 		if(!socket->timer_currently_running){
-			//printf("addTimer!");
 			socket->timer_UUID = addTimer((void *)socket, socket->RTO);
 			socket->timer_currently_running = true;
 		}
@@ -1488,7 +1099,6 @@ int TCPAssignment::send_maximum(Socket * socket){
 		if(segment_size > 0){
 			send_data_packet(socket, st, ed);
 			socket->next_seq_num += segment_size;
-			//printf("send_maximum:insert seg:{%u~%u}\n", st, ed);
 			socket->sent_unACKed_segments.insert({st, ed});
 			ret += segment_size;
 		}
@@ -1497,7 +1107,6 @@ int TCPAssignment::send_maximum(Socket * socket){
 		}
 	}
 	if(socket->closed_by_user && socket->next_seq_num == socket->FIN_seq_num){
-		//printf("send_maximum: send fin\n");
 		send_FIN(socket);
 		socket->next_seq_num++;
 		socket->sent_unACKed_segments.insert({socket->FIN_seq_num,socket->FIN_seq_num});
@@ -1509,10 +1118,7 @@ int TCPAssignment::send_maximum(Socket * socket){
 			socket->state = TCPState::LAST_ACK;
 		}
 	}
-	//printf("send maximum: sent %d\n", ret);
-	//printf("nsn:%u ", socket->next_seq_num);
-	//printf("nw:%u\n", socket->next_write);
-	//printf("ret:%d", ret);
+
 	return ret;
 }
 
@@ -1524,7 +1130,6 @@ void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
 		Time recv_time = this->getHost()->getSystem()->getCurrentTime();
 		Time sample_RTT = recv_time - socket->RTT_sent_time;
 		socket->RTT = socket->RTT - (socket->RTT >> 3) + (sample_RTT >> 3);
-		//printf("sampleRTT:%u\n", TimeUtil::getTime(sample_RTT, TimeUtil::MSEC));
 		Time diff;
 		if(socket->RTT >= sample_RTT){
 			diff = socket->RTT - sample_RTT;
@@ -1536,11 +1141,9 @@ void TCPAssignment::calculate_RTO(Socket * socket, uint32_t ACK_num){
 		socket->RTO = socket->RTT + 4 * socket->RTTVAR;
 		socket->RTT_time_calculating = false;
 	}
-	//printf("RTO:%d\n", (int)TimeUtil::getTime(socket->RTO, TimeUtil::MSEC));
 }
 
 void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
-	//printf("retransmission\n");
 	if(socket->timer_currently_running){
 		cancelTimer(socket->timer_UUID);
 		socket->timer_currently_running = false;
@@ -1551,7 +1154,6 @@ void TCPAssignment::retransmit_unACKed_packets(Socket *socket){
 	else{
 		uint32_t ed = socket->sent_unACKed_segments.at(socket->send_base);
 		if(socket->closed_by_user && socket->send_base == socket->FIN_seq_num){
-			//printf("FIN seq num:%u\n", socket->FIN_seq_num);
 			send_FIN(socket);
 		}
 		else{
